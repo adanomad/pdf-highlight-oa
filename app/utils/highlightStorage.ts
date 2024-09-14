@@ -1,4 +1,4 @@
-// highlight_storage.ts
+// app/utils/highlightStorage.ts
 // Bonus challenge.
 
 // TODO: Import necessary types and libraries

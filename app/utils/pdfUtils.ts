@@ -1,4 +1,4 @@
-// Import necessary types and libraries
+// app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
 
