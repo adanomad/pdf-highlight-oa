@@ -1,6 +1,9 @@
 // app/utils/highlightStorage.ts
 // Bonus challenge.
 
+import { StoredHighlight } from "./types";
+import SQLiteDatabase from "./sqliteUtils";
+
 // TODO: Import necessary types and libraries
 // Consider importing types from your PDF highlighting library
 // import { IHighlight } from "react-pdf-highlighter";
@@ -9,69 +12,92 @@
 // import { Database } from "your-chosen-database-library";
 
 // TODO: Define an interface for the highlight data we want to store
-interface StoredHighlight {
-  id: string;
-  pdfId: string;
-  pageNumber: number;
-  x1: number;
-  y1: number;
-  x2: number;
-  y2: number;
-  text: string;
-  keyword: string;
-}
+// interface StoredHighlight {
+//   id: string;
+//   pdfId: string;
+//   pageNumber: number;
+//   x1: number;
+//   y1: number;
+//   x2: number;
+//   y2: number;
+//   width: number;
+//   height: number;
+//   text: string;
+//   keyword: string;
+// }
 
 // TODO: Define a class to handle highlight storage operations
+
 class HighlightStorage {
-  private db: any; // Replace 'any' with the actual type from your chosen database library
+  private db: SQLiteDatabase;
 
   constructor() {
-    // TODO: Initialize the database connection
-    // this.db = new Database(/* connection details */);
+    this.db = new SQLiteDatabase();
   }
 
-  // TODO: Implement a method to save a single highlight
   async saveHighlight(highlight: StoredHighlight): Promise<void> {
-    // CHALLENGE: Implement the logic to save a highlight to the database
-    // Consider using prepared statements or an ORM to prevent SQL injection
-    // Example pseudo-code:
-    // await this.db.insert("highlights", highlight);
+    if (!highlight.keyword) {
+      highlight.keyword = ""; // or some default value
+    }
+    await this.db.saveHighlight(highlight);
   }
 
-  // TODO: Implement a method to save multiple highlights in bulk
   async saveBulkHighlights(highlights: StoredHighlight[]): Promise<void> {
-    // CHALLENGE: Implement bulk insert logic
-    // Consider using transactions for better performance and data integrity
+    const validHighlights = highlights.map((highlight) => ({
+      ...highlight,
+      keyword: highlight.keyword || "", // or some default value
+    }));
+    await this.db.saveBulkHighlights(validHighlights);
   }
 
-  // TODO: Implement a method to retrieve highlights for a specific PDF
   async getHighlightsForPdf(pdfId: string): Promise<StoredHighlight[]> {
-    // CHALLENGE: Implement the logic to retrieve highlights from the database
-    // Example pseudo-code:
-    // return await this.db.query("SELECT * FROM highlights WHERE pdfId = ?", [pdfId]);
-    return [];
+    return await this.db.getHighlightsForPdf(pdfId);
   }
 
-  // TODO: Implement a method to update an existing highlight
-  async updateHighlight(
-    id: string,
-    updatedData: Partial<StoredHighlight>
+  async deleteHighlight(pdfId: string, id: string): Promise<void> {
+    await this.db.deleteHighlight(pdfId, id);
+  }
+
+  async indexWords(
+    pdfId: string,
+    words: {
+      keyword: string;
+      x1: number;
+      y1: number;
+      x2: number;
+      y2: number;
+    }[]
   ): Promise<void> {
-    // CHALLENGE: Implement the update logic
-    // Consider which fields should be updatable and which should remain constant
+    const storedHighlights = words.map((word) => ({
+      ...word,
+      id: Math.random().toString(36).substr(2, 9),
+      pdfId,
+      width: 0,
+      height: 0,
+      pageNumber: -1,
+      text: "",
+      image: undefined,
+    }));
+    await this.saveBulkHighlights(storedHighlights);
   }
 
-  // TODO: Implement a method to delete a highlight
-  async deleteHighlight(id: string): Promise<void> {
-    // CHALLENGE: Implement the delete logic
-    // Consider soft delete vs. hard delete approaches
-  }
-
-  // TODO: Implement a method to close the database connection
   async close(): Promise<void> {
-    // CHALLENGE: Implement proper cleanup of database resources
-    // await this.db.close();
+    await this.db.close();
   }
+
+  // TODO: Implement updateHighlight method
+  // async updateHighlight(id: string, updatedData: Partial<StoredHighlight>): Promise<void> {
+  //   // Implement update logic
+  // }
+
+  // BONUS CHALLENGE: Implement export/import methods
+  // async exportToJson(pdfId: string, filePath: string): Promise<void> {
+  //   // Implement export logic
+  // }
+
+  // async importFromJson(filePath: string): Promise<void> {
+  //   // Implement import logic
+  // }
 }
 
 // TODO: Consider implementing a caching layer for frequently accessed highlights

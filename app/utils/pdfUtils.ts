@@ -2,13 +2,13 @@
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
 
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
+
 // TODO: Consider using a library like 'google-ocr' for more accurate text recognition
 // and cases where text is not embedded in the pdf itself (e.g. scanned document)
-
-// Constants for fixed dimensions
-// FIXME: These values might not be appropriate for all PDFs
-const FIXED_WIDTH = 800;
-const FIXED_HEIGHT = 1200;
 
 /**
  * Searches a PDF for given keywords and returns highlights
@@ -20,7 +20,7 @@ const FIXED_HEIGHT = 1200;
 export const searchPdf = async (
   keywords: string[],
   pdfUrl: string,
-  viewportZoom: number = 1
+  viewportZoom: number = 1,
 ): Promise<IHighlight[]> => {
   const highlights: IHighlight[] = [];
 
@@ -62,7 +62,7 @@ export const searchPdf = async (
             keywords,
             pageNum,
             highlights,
-            adjustedViewport
+            adjustedViewport,
           );
           textLine = "";
           lineItems = [];
@@ -80,7 +80,7 @@ export const searchPdf = async (
           keywords,
           pageNum,
           highlights,
-          adjustedViewport
+          adjustedViewport,
         );
       }
     }
@@ -106,7 +106,7 @@ const processLine = (
   keywords: string[],
   pageNumber: number,
   highlights: IHighlight[],
-  viewport: any
+  viewport: any,
 ) => {
   keywords.forEach((keyword) => {
     // FIXME: This regex might need to be adjusted for more accurate matching
@@ -145,8 +145,8 @@ const processLine = (
         Math.max(...lineItems.map((item) => item.height));
 
       // Convert coordinates to viewport points
-      const [tx1, ty1] = viewport.convertToViewportPoint(x1, y1);
-      const [tx2, ty2] = viewport.convertToViewportPoint(x2, y2);
+      const [tx1, ty1] = [x1, y1];
+      const [tx2, ty2] = [x2, y2];
 
       // Flip y-coordinates
       // FIXME: This flipping might not be necessary or correct for all PDFs
@@ -162,8 +162,8 @@ const processLine = (
             y1: Math.min(flippedY1, flippedY2),
             x2: tx2,
             y2: Math.max(flippedY1, flippedY2),
-            width: FIXED_WIDTH,
-            height: FIXED_HEIGHT,
+            width: viewport.width,
+            height: viewport.height,
             pageNumber,
           },
           rects: [
@@ -172,8 +172,8 @@ const processLine = (
               y1: Math.min(flippedY1, flippedY2),
               x2: tx2,
               y2: Math.max(flippedY1, flippedY2),
-              width: FIXED_WIDTH,
-              height: FIXED_HEIGHT,
+              width: viewport.width,
+              height: viewport.height,
               pageNumber,
             },
           ],
@@ -191,3 +191,45 @@ const processLine = (
  * @returns A string representing a unique ID
  */
 const getNextId = () => String(Math.random()).slice(2);
+
+export const getPdfId = (pdfName: string, email?: string) =>
+  email
+    ? `${pdfName.replace(".", "__")}__${email.replace("@", "__at__").replace(".", "__")}`
+    : pdfName.replace(".", "__");
+
+// https://stackoverflow.com/a/65985452
+const readFileData = (file: File) => {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      resolve(e?.target?.result);
+    };
+    reader.onerror = (err) => {
+      reject(err);
+    };
+    reader.readAsDataURL(file);
+  });
+};
+
+export const convertPdfToImages = async (file: File) => {
+  const data = await readFileData(file);
+  if (!data) {
+    return [];
+  }
+  const images: string[] = [];
+  const pdf = await pdfjs.getDocument(data).promise;
+  const canvas = document.createElement("canvas");
+  for (let i = 0; i < pdf.numPages; i++) {
+    const page = await pdf.getPage(i + 1);
+    const viewport = page.getViewport({ scale: 1 });
+    const context = canvas.getContext("2d");
+    if (context) {
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      images.push(canvas.toDataURL());
+    }
+  }
+  canvas.remove();
+  return images;
+};

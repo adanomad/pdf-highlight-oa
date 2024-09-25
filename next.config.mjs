@@ -21,6 +21,10 @@ const nextConfig = {
 
     return config;
   },
+  env: {
+    NEXT_PUBLIC_AUTH_ENABLED: process.env.AUTH_ENABLED || "false",
+  },
+
   // Other Next.js configurations can be added here
 };
 
