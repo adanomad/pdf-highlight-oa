@@ -2,30 +2,130 @@
 
 import sqlite3 from "sqlite3";
 import path from "path";
-import { StoredHighlight } from "./types";
+import { StoredHighlight, StoredPdf } from "./types";
 
+// Refactored common functions to general SQLiteDatabase class
+// to support both pdf storage and highlight storage.
 class SQLiteDatabase {
-  private db: sqlite3.Database;
-  private tableName: string = "highlights";
-  private migrationPromise: Promise<void>;
+  protected db: sqlite3.Database;
+  protected tableName: string;
+  protected migrationPromise: Promise<void> | undefined
 
-  constructor() {
-    this.db = new sqlite3.Database(
-      path.join(process.cwd(), "highlights.db"),
+  constructor(name: string) {
+    this.tableName = name;
+    this.db = this.getDatabase(name);
+  }
+
+  private getDatabase(name: string): sqlite3.Database {
+    return new sqlite3.Database(
+      path.join(process.cwd(), `${name}.db`),
       sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
       (error) => {
         if (error) {
           console.error("Error opening database:", error.message);
         } else {
-          console.log("Connected to highlights db!");
+          console.log(`Connected to ${name} db!`);
         }
       }
     );
+  }
+
+  protected async ensureMigrated(): Promise<void> {
+    await this.migrationPromise;
+  }
+
+  async close(): Promise<void> {
+    await this.ensureMigrated();
+    return new Promise((resolve, reject) => {
+      this.db.close((error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+}
+
+class PdfSQLiteDatabase extends SQLiteDatabase {
+  constructor() {
+    super("pdfs");
     this.migrationPromise = this.migrate();
   }
 
-  private migrate(): Promise<void> {
+  migrate(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      const sql = `
+        CREATE TABLE IF NOT EXISTS ${this.tableName} (
+          id TEXT,
+          name TEXT,
+          base64 TEXT,
+          PRIMARY KEY (id)
+        )
+      `;
+      this.db.run(sql, (err) => {
+        if (err) {
+          console.error("Error creating table:", err.message);
+          reject(err);
+        } else {
+          console.log(`${this.tableName} table created or already exists`);
+          resolve();
+        }
+      });
+    })
+  }
+
+  async savePdf(pdf: StoredPdf): Promise<void> {
+    await this.ensureMigrated();
+    const sql = `INSERT OR REPLACE INTO ${this.tableName} (id, name, base64) VALUES (?, ?, ?)`;
     return new Promise((resolve, reject) => {
+      this.db.run(sql, Object.values(pdf), (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  async deletePdf(id: string): Promise<void> {
+    await this.ensureMigrated();
+    const sql = `DELETE FROM ${this.tableName} WHERE id = ?`;
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, [id], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  async getPdf(id: string): Promise<StoredPdf> {
+    await this.ensureMigrated();
+    const sql = `SELECT * FROM ${this.tableName} WHERE id = ?`;
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, [id], (error, rows) => {
+        if (error) reject(error);
+        else resolve(rows[0] as StoredPdf);
+      });
+    });
+  }
+
+  async getBulkPdf(range: number): Promise<StoredPdf[]> {
+    await this.ensureMigrated();
+    const sql = `SELECT TOP ${range} * FROM ${this.tableName}`;
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, (error, rows) => {
+        if (error) reject(error);
+        else resolve(rows as StoredPdf[]);
+      });
+    });
+  }
+}
+
+class HighlightsSQLiteDatabase extends SQLiteDatabase {
+  constructor() {
+    super("highlights");
+    this.migrationPromise = this.migrate();
+  }
+
+  migrate(): Promise<void> {  
+    return new Promise<void>((resolve, reject) => {
       const sql = `
         CREATE TABLE IF NOT EXISTS ${this.tableName} (
           id TEXT,
@@ -48,15 +148,11 @@ class SQLiteDatabase {
           console.error("Error creating table:", err.message);
           reject(err);
         } else {
-          console.log("Highlights table created or already exists");
+          console.log(`${this.tableName} table created or already exists`);
           resolve();
         }
       });
-    });
-  }
-
-  private async ensureMigrated(): Promise<void> {
-    await this.migrationPromise;
+    })
   }
 
   async saveHighlight(highlight: StoredHighlight): Promise<void> {
@@ -116,16 +212,6 @@ class SQLiteDatabase {
       });
     });
   }
-
-  async close(): Promise<void> {
-    await this.ensureMigrated();
-    return new Promise((resolve, reject) => {
-      this.db.close((error) => {
-        if (error) reject(error);
-        else resolve();
-      });
-    });
-  }
 }
 
-export default SQLiteDatabase;
+export { PdfSQLiteDatabase, HighlightsSQLiteDatabase };

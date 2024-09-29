@@ -233,3 +233,14 @@ export const convertPdfToImages = async (file: File) => {
   canvas.remove();
   return images;
 };
+
+// I thought I have to write my own b64 encoder but it seems this does it already
+// https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+export const convertPdfToBase64 = async (file: File) => {
+  const data = await readFileData(file);
+  if (!data) {
+    return "";
+  }
+  const dataString = data as string;
+  return dataString.split(",")[1];
+}

@@ -6,10 +6,10 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToBase64, convertPdfToImages, searchPdf } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
-import { StoredHighlight, StorageMethod } from "../utils/types";
+import { StoredHighlight, StoredPdf, StorageMethod } from "../utils/types";
 import {
   IHighlightToStoredHighlight,
   StoredHighlightToIHighlight,
@@ -83,11 +83,26 @@ export default function App() {
       //   }),
       // });
     }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
+    fetch("/api/pdf/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: pdfId,
+        name: file.name,
+        base64: await convertPdfToBase64(file),
+      }),
+    })
+    .then((res) => {
+      if (res.ok) {
+        setPdfUrl(fileUrl);
+        setPdfUploaded(true);
+        setPdfName(file.name);
+        setPdfId(pdfId);
+        setLoading(false);
+      } else {
+        throw new Error("Failed to upload PDF to database");
+      }
+    });
   };
 
   useEffect(() => {
