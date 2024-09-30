@@ -56,12 +56,31 @@ export default function App() {
       { pdfTitle: "ocr-out" },
       { pdf: true }
     );
+    
     const pdf = res.data.pdf;
     if (pdf) {
       // Update file url if OCR success
       const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
       const fileOcrUrl = URL.createObjectURL(blob);
       setPdfOcrUrl(fileOcrUrl);
+
+      const formData = new FormData();
+      formData.append("pdfFile", blob); 
+      formData.append("pdfId", pdfId);
+      formData.append("pdfName", file.name)
+
+      try {
+        const response = await fetch("/api/pdf_storage", {
+          method: "POST",
+          body: formData, 
+        });
+    
+        if (!response.ok) {
+          throw new Error(`Failed to upload PDF`);
+        }
+      } catch (error) {
+        throw new Error(`File not stored properly in Supabase storage`)
+      }
 
       // Index words
       // const data = res.data.words;
@@ -83,11 +102,6 @@ export default function App() {
       //   }),
       // });
     }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
   };
 
   useEffect(() => {
