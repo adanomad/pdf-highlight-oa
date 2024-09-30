@@ -6,3 +6,6 @@ export const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET as string;
 export const storageMethod = process.env.STORAGE_METHOD
   ? (process.env.STORAGE_METHOD as "supabase" | "sqlite")
   : "sqlite";
+export const debugOcrPdfEnabled = process.env.DEBUG_OCRPDF_ENABLED
+  ? (["true", "True", "1", "TRUE"].includes(process.env.DEBUG_OCRPDF_ENABLED as string))
+  : true

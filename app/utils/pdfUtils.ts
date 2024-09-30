@@ -1,6 +1,7 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
+import { createWorker } from "tesseract.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -243,4 +244,18 @@ export const convertPdfToBase64 = async (file: File) => {
   }
   const dataString = data as string;
   return dataString.split(",")[1];
+}
+
+export const getOcrPdf = async (file: File) => {
+  const i = await convertPdfToImages(file);
+  const worker = await createWorker("eng");
+  const res = await worker.recognize(
+    i[0],
+    { pdfTitle: "ocr-out" },
+    { pdf: true }
+  );
+  if (res.data.pdf) {
+    return new File([new Uint8Array(res.data.pdf)], file.name.split(".")[0] + "_ocr" + file.name.split(".")[1],  { type: "application/pdf" });
+  }
+  return null;
 }
