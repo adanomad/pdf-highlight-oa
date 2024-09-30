@@ -1,6 +1,7 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
+import axios from 'axios';
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -83,12 +84,90 @@ export const searchPdf = async (
           adjustedViewport,
         );
       }
+
+      // Check for image recognition match
+      const imageMatch = await checkPageImageRecognition(page, keywords);
+      console.log(imageMatch);
+      if (imageMatch) {
+        highlights.push(createFullPageHighlight(pageNum, viewport, keywords));
+      }
     }
   } catch (error) {
     console.error("Error searching PDF:", error);
   }
 
   return highlights;
+};
+/**
+ * Converts a PDF page to an image and checks it against the image recognition API
+ * @param page - PDF page object
+ * @param keywords - Array of keywords to check
+ * @returns Promise resolving to a boolean indicating if any keyword was found
+ */
+const checkPageImageRecognition = async (page: any, keywords: string[]): Promise<boolean> => {
+  const scale = 1.5;
+  const viewport = page.getViewport({ scale });
+  const canvas = document.createElement('canvas');
+  const context = canvas.getContext('2d');
+  canvas.height = viewport.height;
+  canvas.width = viewport.width;
+
+  await page.render({ canvasContext: context, viewport }).promise;
+  const imageDataUrl = canvas.toDataURL('image/jpeg');
+
+  for (const keyword of keywords) {
+    try {
+      const response = await axios.post('http://localhost:5000/image-contains', {
+        image: imageDataUrl,
+        keyword: keyword
+      });
+      if (response.data.result) {
+        return true;
+      }
+    } catch (error) {
+      console.error("Error calling image recognition API:", error);
+    }
+  }
+
+  return false;
+};
+
+/**
+ * Creates a highlight covering the entire page
+ * @param pageNumber - Page number
+ * @param viewport - Page viewport
+ * @param keywords - Array of keywords that triggered the highlight
+ * @returns IHighlight object for the entire page
+ */
+const createFullPageHighlight = (pageNumber: number, viewport: any, keywords: string[]): IHighlight => {
+  return {
+    content: { text: `Page contains: ${keywords.join(', ')}` },
+    position: {
+      boundingRect: {
+        x1: 0,
+        y1: 0,
+        x2: viewport.width,
+        y2: viewport.height,
+        width: viewport.width,
+        height: viewport.height,
+        pageNumber,
+      },
+      rects: [
+        {
+          x1: 0,
+          y1: 0,
+          x2: viewport.width,
+          y2: viewport.height,
+          width: viewport.width,
+          height: viewport.height,
+          pageNumber,
+        },
+      ],
+      pageNumber,
+    },
+    comment: { text: `Page contains keywords: ${keywords.join(', ')}`, emoji: '🔍' },
+    id: getNextId(),
+  };
 };
 
 /**
