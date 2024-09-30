@@ -24,6 +24,12 @@ const removeHighlight = (highlights: IHighlight[], id: string) => {
   });
 };
 
+const removeStoredHighlight = (storedHighlights: StoredHighlight[], id: string) => {
+  return storedHighlights.filter((h) => {
+    return h.id !== id;
+  });
+}
+
 const OpenIcon = () => {
   return (
     <svg
@@ -142,7 +148,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <Button
                       variant="ghost"
                       size="icon"
-                      onClick={() => {
+                      onClick={async () => {
                         const body =
                           storageMethod === StorageMethod.sqlite
                             ? {
@@ -150,11 +156,16 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                 id: highlight.id,
                               }
                             : highlight.id;
-                        fetch("/api/highlight/update", {
+                        await fetch("/api/highlight/update", {
                           method: "DELETE",
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(body),
                         });
+                        const newStoredHighlights = removeStoredHighlight(
+                          storedHighlights,
+                          highlight.id
+                        );
+                        setStoredHighlights([...newStoredHighlights]);
                         const newHighlights = removeHighlight(
                           highlights,
                           highlight.id
@@ -223,7 +234,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                               <Button
                                 variant="ghost"
                                 size="icon"
-                                onClick={() => {
+                                onClick={async () => {
                                   const body =
                                     storageMethod === StorageMethod.sqlite
                                       ? {
@@ -231,13 +242,21 @@ export const Sidebar: React.FC<SidebarProps> = ({
                                           id: highlight.id,
                                         }
                                       : highlight.id;
-                                  fetch("/api/highlight/update", {
+                                  await fetch("/api/highlight/update", {
                                     method: "DELETE",
                                     headers: { "Content-Type": "application/json" },
                                     body: JSON.stringify(body),
                                   });
-                                  const newHighlights = storedHighlights.filter((h) => !(h.id === highlight.id));
-                                  setStoredHighlights([...newHighlights]);
+                                  const newStoredHighlights = removeStoredHighlight(
+                                    storedHighlights,
+                                    highlight.id
+                                  );
+                                  setStoredHighlights([...newStoredHighlights]);
+                                  const newHighlights = removeHighlight(
+                                    highlights,
+                                    highlight.id
+                                  );
+                                  setHighlights([...newHighlights]);
                                 }}
                               >
                                 <X className="w-3 h-3" />

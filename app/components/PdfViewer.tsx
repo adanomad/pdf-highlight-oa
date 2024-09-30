@@ -45,6 +45,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   setHighlights,
   setStoredHighlights,
   highlightsKey,
+  storedHighlightsKey,
   pdfViewerRef,
   resetHash,
   scrollViewerTo,

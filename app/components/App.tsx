@@ -51,7 +51,7 @@ export default function App() {
     //   perform OCR,
     //   convert output back to PDF
     //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
+    /*const i = await convertPdfToImages(file);
     const worker = await createWorker("eng");
     const res = await worker.recognize(
       i[0],
@@ -84,7 +84,7 @@ export default function App() {
       //     words,
       //   }),
       // });
-    }
+    }*/
     fetch("/api/pdf/update", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -119,7 +119,6 @@ export default function App() {
       });
       if (res.ok) {
         const resHighlights = await res.json();
-        console.log("getHighlights", pdfId, resHighlights);
         if (resHighlights) {
           const highlights = resHighlights.map(
             (storedHighlight: StoredHighlight) => {
@@ -267,6 +266,17 @@ export default function App() {
           });
           newStoredHighlights = [...newStoredHighlights, ...extraStoredHighlights];
           saveHighlights(pdf.id, extraStoredHighlights);
+          const res2 = await fetch("/api/highlight/get", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({pdfId: pdf.id}),
+          });
+          if (res2.ok) {
+            const resHighlights = await res2.json();
+            if (resHighlights) {
+              setStoredHighlights([...newStoredHighlights, ...resHighlights]);
+            }
+          }
         }
       } else {
         throw new Error("Failed to get PDF from database")
@@ -306,10 +316,6 @@ export default function App() {
     if (highlight) {
       scrollViewerTo.current(highlight);
     }
-  }, [highlights]);
-
-  useEffect(() => {
-    console.log(highlights);
   }, [highlights]);
 
   const changeCurrentPdf = async (pdfId: string) => {
