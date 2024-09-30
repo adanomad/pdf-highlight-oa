@@ -274,7 +274,7 @@ export default function App() {
           if (res2.ok) {
             const resHighlights = await res2.json();
             if (resHighlights) {
-              setStoredHighlights([...newStoredHighlights, ...resHighlights]);
+              newStoredHighlights = [...newStoredHighlights, ...resHighlights];
             }
           }
         }
