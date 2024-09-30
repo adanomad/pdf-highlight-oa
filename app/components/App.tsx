@@ -18,7 +18,7 @@ import {
 import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
-import { debugOcrPdfEnabled, storageMethod } from "../utils/env";
+import { debugMultiSearchEnabled, debugOcrPdfEnabled, storageMethod } from "../utils/env";
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
@@ -220,49 +220,51 @@ export default function App() {
         saveHighlights(pdfId, newStoredHighlights);
       }
 
-      const res = await fetch("/api/pdf/get", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          amount: 20
-        }),
-      });
-
-      if (res.ok) {
-        const body = await res.json();
-        for (const pdf of body as StoredPdf[]) {
-          if (pdf.id === pdfId) {
-            continue;
-          }
-          const dataUrl = "data:application/pdf;base64," + pdf.base64;
-          let blobUrl = URL.createObjectURL(await DataUrlToBlob(dataUrl));
-          let extraHighlights = await searchPdf(keywords, blobUrl, 1);
-          if (debugOcrPdfEnabled && extraHighlights.length === 0) {
-            const ocrPdf = await getOcrPdf((await DataUrlToBlob(dataUrl)) as File);
-            if (ocrPdf) {
-              const ocrPdfUrl = URL.createObjectURL(ocrPdf);
-              extraHighlights = await searchPdf(keywords, ocrPdfUrl, 1);
+      if(debugMultiSearchEnabled) {
+        const res = await fetch("/api/pdf/get", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            amount: 20
+          }),
+        });
+  
+        if (res.ok) {
+          const body = await res.json();
+          for (const pdf of body as StoredPdf[]) {
+            if (pdf.id === pdfId) {
+              continue;
+            }
+            const dataUrl = "data:application/pdf;base64," + pdf.base64;
+            let blobUrl = URL.createObjectURL(await DataUrlToBlob(dataUrl));
+            let extraHighlights = await searchPdf(keywords, blobUrl, 1);
+            if (debugOcrPdfEnabled && extraHighlights.length === 0) {
+              const ocrPdf = await getOcrPdf((await DataUrlToBlob(dataUrl)) as File);
+              if (ocrPdf) {
+                const ocrPdfUrl = URL.createObjectURL(ocrPdf);
+                extraHighlights = await searchPdf(keywords, ocrPdfUrl, 1);
+              }
+            }
+            let extraStoredHighlights = extraHighlights.map((highlight) => {
+              return IHighlightToStoredHighlight(highlight, pdf.id);
+            });
+            newStoredHighlights = [...newStoredHighlights, ...extraStoredHighlights];
+            saveHighlights(pdf.id, extraStoredHighlights);
+            const res2 = await fetch("/api/highlight/get", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({pdfId: pdf.id}),
+            });
+            if (res2.ok) {
+              const resHighlights = await res2.json();
+              if (resHighlights) {
+                newStoredHighlights = [...newStoredHighlights, ...resHighlights];
+              }
             }
           }
-          let extraStoredHighlights = extraHighlights.map((highlight) => {
-            return IHighlightToStoredHighlight(highlight, pdf.id);
-          });
-          newStoredHighlights = [...newStoredHighlights, ...extraStoredHighlights];
-          saveHighlights(pdf.id, extraStoredHighlights);
-          const res2 = await fetch("/api/highlight/get", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({pdfId: pdf.id}),
-          });
-          if (res2.ok) {
-            const resHighlights = await res2.json();
-            if (resHighlights) {
-              newStoredHighlights = [...newStoredHighlights, ...resHighlights];
-            }
-          }
+        } else {
+          throw new Error("Failed to get PDF from database")
         }
-      } else {
-        throw new Error("Failed to get PDF from database")
       }
 
       if (pdfName && pdfId) {

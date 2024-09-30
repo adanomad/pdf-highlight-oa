@@ -9,3 +9,6 @@ export const storageMethod = process.env.STORAGE_METHOD
 export const debugOcrPdfEnabled = process.env.DEBUG_OCRPDF_ENABLED
   ? (["true", "True", "1", "TRUE"].includes(process.env.DEBUG_OCRPDF_ENABLED as string))
   : true
+export const debugMultiSearchEnabled = process.env.DEBUG_MULTISEARCH_ENABLED
+  ? (["true", "True", "1", "TRUE"].includes(process.env.DEBUG_MULTISEARCH_ENABLED as string))
+  : true

@@ -10,7 +10,7 @@ import {
 } from "react-pdf-highlighter";
 import { Button } from "./Button";
 import { X } from "lucide-react";
-import { storageMethod } from "../utils/env";
+import { debugMultiSearchEnabled, storageMethod } from "../utils/env";
 import { StorageMethod, StoredHighlight } from "../utils/types";
 import { StoredHighlightToIHighlight } from "../utils/utils";
 
@@ -161,11 +161,13 @@ export const Sidebar: React.FC<SidebarProps> = ({
                           headers: { "Content-Type": "application/json" },
                           body: JSON.stringify(body),
                         });
-                        const newStoredHighlights = removeStoredHighlight(
-                          storedHighlights,
-                          highlight.id
-                        );
-                        setStoredHighlights([...newStoredHighlights]);
+                        if (debugMultiSearchEnabled) {
+                          const newStoredHighlights = removeStoredHighlight(
+                            storedHighlights,
+                            highlight.id
+                          );
+                          setStoredHighlights([...newStoredHighlights]);
+                        }
                         const newHighlights = removeHighlight(
                           highlights,
                           highlight.id
@@ -182,7 +184,8 @@ export const Sidebar: React.FC<SidebarProps> = ({
           ))}
         </ul>
         {
-          storedHighlights
+          debugMultiSearchEnabled ? 
+            (storedHighlights
             .reduce((acc, highlight) => {
               if (!acc.includes(highlight.pdfId) && !(highlight.pdfId === pdfId)) {
                 acc.push(highlight.pdfId);
@@ -270,6 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 </ul>
               ]);
             })
+          ) : (null)
         }
       </div>
     </div>
