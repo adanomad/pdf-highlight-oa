@@ -4,6 +4,34 @@ import { supabaseKey, supabaseUrl } from "./env";
 import { StoredHighlight } from "./types";
 import fs from "fs";
 
+export const getPublicUrl = async (path: string) => {
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+  const { data } = supabaseClient.storage
+    .from('pdf_storage')
+    .getPublicUrl(path);
+
+  return data.publicUrl;
+};
+
+export const uploadPdf = async (pdfFile: Blob, pdfId: string, pdfName: string) => {
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+  const { data, error } = await supabaseClient.storage
+    .from('pdf_storage')
+    .upload(`${pdfId}/${pdfName}`, pdfFile, {
+      contentType: pdfFile.type,
+      upsert: true,
+    });
+
+  if (error) {
+    throw new Error(`PDF upload failed: ${error.message}`);
+  }
+
+  const publicURL = await getPublicUrl(data.path);
+  return publicURL;
+};
+
 export const saveHighlight = async (highlight: StoredHighlight) => {
   const supabaseClient = createClient(supabaseUrl, supabaseKey);
   const { error } = await supabaseClient.from("highlights").insert(highlight);
