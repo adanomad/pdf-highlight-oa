@@ -2,11 +2,12 @@
 
 import sqlite3 from "sqlite3";
 import path from "path";
-import { StoredHighlight } from "./types";
+import { StoredHighlight, StoredPdf } from "./types";
 
 class SQLiteDatabase {
   private db: sqlite3.Database;
   private tableName: string = "highlights";
+  private pdfTableName: string = "pdfs";
   private migrationPromise: Promise<void>;
 
   constructor() {
@@ -25,7 +26,7 @@ class SQLiteDatabase {
   }
 
   private migrate(): Promise<void> {
-    return new Promise((resolve, reject) => {
+    return new Promise<void>((resolve, reject) => {
       const sql = `
         CREATE TABLE IF NOT EXISTS ${this.tableName} (
           id TEXT,
@@ -52,11 +53,51 @@ class SQLiteDatabase {
           resolve();
         }
       });
-    });
+    }).then(() => new Promise((resolve, reject) => {
+      const sql = `
+        CREATE TABLE IF NOT EXISTS ${this.pdfTableName} (
+          id TEXT,
+          pdfId TEXT,
+          data TEXT,
+          PRIMARY KEY (id, pdfId)
+        )
+      `;
+      this.db.run(sql, (err) => {
+        if (err) {
+          console.error("Error creating table:", err.message);
+          reject(err);
+        } else {
+          console.log("Pdfs table created or already exists");
+          resolve();
+        }
+      });
+    }));
   }
 
   private async ensureMigrated(): Promise<void> {
     await this.migrationPromise;
+  }
+
+  async savePdf(pdf: StoredPdf): Promise<void> {
+    await this.ensureMigrated();
+    const sql = `INSERT OR REPLACE INTO ${this.pdfTableName} (id, pdfId, data) VALUES (?, ?, ?)`;
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, [pdf.id, pdf.pdfId, pdf.data], (error) => {
+        if (error) reject(error);
+        else resolve();
+      });
+    });
+  }
+
+  async getPdf(pdfId?: string): Promise<StoredPdf[]> {
+    await this.ensureMigrated();
+    const sql = `SELECT * FROM ${this.pdfTableName} ${pdfId && `WHERE pdfId = ?`}`;
+    return new Promise((resolve, reject) => {
+      this.db.all(sql, [pdfId], (error, rows) => {
+        if (error) reject(error);
+        else resolve(rows as StoredPdf[]);
+      });
+    });
   }
 
   async saveHighlight(highlight: StoredHighlight): Promise<void> {

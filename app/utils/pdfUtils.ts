@@ -211,11 +211,20 @@ const readFileData = (file: File) => {
   });
 };
 
-export const convertPdfToImages = async (file: File) => {
+export const convertPdfToImages = async (file: File, pdfId: string) => {
   const data = await readFileData(file);
   if (!data) {
     return [];
   }
+  await fetch("/api/pdf", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      data,
+      pdfId,
+      id: getNextId(),
+    }),
+  });
   const images: string[] = [];
   const pdf = await pdfjs.getDocument(data).promise;
   const canvas = document.createElement("canvas");

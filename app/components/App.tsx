@@ -49,7 +49,7 @@ export default function App() {
     //   perform OCR,
     //   convert output back to PDF
     //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
+    const i = await convertPdfToImages(file, pdfId);
     const worker = await createWorker("eng");
     const res = await worker.recognize(
       i[0],
