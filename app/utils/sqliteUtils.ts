@@ -99,16 +99,16 @@ class PdfSQLiteDatabase extends SQLiteDatabase {
     await this.ensureMigrated();
     const sql = `SELECT * FROM ${this.tableName} WHERE id = ?`;
     return new Promise((resolve, reject) => {
-      this.db.all(sql, [id], (error, rows) => {
+      this.db.get(sql, [id], (error, row) => {
         if (error) reject(error);
-        else resolve(rows[0] as StoredPdf);
+        else resolve(row as StoredPdf);
       });
     });
   }
 
-  async getBulkPdf(range: number): Promise<StoredPdf[]> {
+  async getBulkPdf(amount: number): Promise<StoredPdf[]> {
     await this.ensureMigrated();
-    const sql = `SELECT TOP ${range} * FROM ${this.tableName}`;
+    const sql = `SELECT * FROM ${this.tableName} LIMIT ${amount}`;
     return new Promise((resolve, reject) => {
       this.db.all(sql, (error, rows) => {
         if (error) reject(error);

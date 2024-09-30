@@ -18,18 +18,22 @@ import type {
   ScaledPosition,
 } from "react-pdf-highlighter";
 import { IHighlightToStoredHighlight } from "../utils/utils";
+import { StoredHighlight } from "../utils/types";
 
 interface PdfViewerProps {
   pdfUrl: string | null;
   pdfName: string | null;
   pdfId: string | null;
   highlights: Array<IHighlight>;
-  setHighlights: React.Dispatch<React.SetStateAction<Array<IHighlight>>>;
+  storedHighlights: Array<StoredHighlight>;
+  setHighlights: React.Dispatch<React.SetStateAction<Array<IHighlight>>>; 
+  setStoredHighlights: React.Dispatch<React.SetStateAction<Array<StoredHighlight>>>;
   highlightsKey: number;
   pdfViewerRef: React.RefObject<any>;
   resetHash: () => void;
   scrollViewerTo: React.MutableRefObject<(highlight: IHighlight) => void>;
   scrollToHighlightFromHash: () => void;
+  changeCurrentPdf: (pdfId: string) => void;
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -37,12 +41,15 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   pdfName,
   pdfId,
   highlights,
+  storedHighlights,
   setHighlights,
+  setStoredHighlights,
   highlightsKey,
   pdfViewerRef,
   resetHash,
   scrollViewerTo,
   scrollToHighlightFromHash,
+  changeCurrentPdf,
 }) => {
   const [sidebarIsOpen, setSidebarIsOpen] = useState(true);
   // const session = useSession();
@@ -97,7 +104,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         {pdfName && pdfId && (
           <Sidebar
             highlights={highlights}
+            storedHighlights={storedHighlights}
             setHighlights={setHighlights}
+            setStoredHighlights={setStoredHighlights}
             resetHighlights={() => {
               setHighlights([]);
             }}
@@ -109,6 +118,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             pdfName={pdfName}
             pdfId={pdfId}
             scrollViewerTo={scrollViewerTo}
+            changeCurrentPdf={changeCurrentPdf}
           />
         )}
       </div>

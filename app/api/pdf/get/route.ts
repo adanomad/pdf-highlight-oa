@@ -17,7 +17,7 @@ async function handleRequest(req: Request): Promise<Response> {
         pdfs = await db.getBulkPdf(body.amount);
       }
       else {
-        pdfs = await db.getPdf(body.id)
+        pdfs = await db.getPdf(body.id);
       }
     } else {
       //TODO supabase
