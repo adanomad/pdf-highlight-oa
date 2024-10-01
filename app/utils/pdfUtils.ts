@@ -190,7 +190,7 @@ const processLine = (
  * Generates a unique ID for highlights
  * @returns A string representing a unique ID
  */
-const getNextId = () => String(Math.random()).slice(2);
+export const getNextId = () => String(Math.random()).slice(2);
 
 export const getPdfId = (pdfName: string, email?: string) =>
   email
@@ -198,7 +198,7 @@ export const getPdfId = (pdfName: string, email?: string) =>
     : pdfName.replace(".", "__");
 
 // https://stackoverflow.com/a/65985452
-const readFileData = (file: File) => {
+export const readFileData = (file: File) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = (e) => {
@@ -211,8 +211,7 @@ const readFileData = (file: File) => {
   });
 };
 
-export const convertPdfToImages = async (file: File) => {
-  const data = await readFileData(file);
+export const convertPdfToImages = async (data?: unknown) => {
   if (!data) {
     return [];
   }
