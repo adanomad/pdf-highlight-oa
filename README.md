@@ -6,7 +6,7 @@ I chose to implement a feature that would automatically upload the PDF into the 
 - Install dependencies: pnpm install
 - Run the development server: pnpm run dev
 - Open http://localhost:3000 in your browser
-A new SQLite table will be automatically if it did not yet exist to store the PDF
+- A new SQLite table will be automatically if it did not yet exist to store the PDF
 
 ## My thought process:
 - The new feature should follow the existing design. After reviewing and understanding the existing code, I drew a diagram(see figure 1.1) for the existing design and implemented the feature as described below.
