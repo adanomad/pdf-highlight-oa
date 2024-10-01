@@ -1,5 +1,5 @@
 # PDF Highlighter 
-I chose to implement a feature that would automatically upload the PDF into the database using sqlite locally, by converting it to a base64 string first.
+I chose to implement a feature that would automatically upload the PDF into the database using sqlite locally, by converting it to a base64 string first. My Waterloo email is a387wang@uwaterloo.ca
 
 ## Set up process:
 - Clone the repository
