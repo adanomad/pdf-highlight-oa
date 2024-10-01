@@ -6,18 +6,19 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToBase64, convertPdfToImages, getOcrPdf, searchPdf } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
-import { StoredHighlight, StorageMethod } from "../utils/types";
+import { StoredHighlight, StoredPdf, StorageMethod } from "../utils/types";
 import {
+  DataUrlToBlob,
   IHighlightToStoredHighlight,
   StoredHighlightToIHighlight,
 } from "../utils/utils";
 import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
-import { storageMethod } from "../utils/env";
+import { debugMultiSearchEnabled, debugOcrPdfEnabled, storageMethod } from "../utils/env";
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
@@ -28,6 +29,7 @@ export default function App() {
   const [pdfId, setPdfId] = useState<string | null>(null);
   const [highlightUrl, setHighlightUrl] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Array<IHighlight>>([]);
+  const [storedHighlights, setStoredHighlights] = useState<Array<StoredHighlight>>([]);
   const [highlightsKey, setHighlightsKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
@@ -44,50 +46,59 @@ export default function App() {
       file.name,
       /* session.data?.user?.email ?? */ undefined
     );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
+    if (debugOcrPdfEnabled) {
+      // Creating a searchable PDF:
+      // Convert uploaded PDF file to b64 image,
+      //   perform OCR,
+      //   convert output back to PDF
+      //   update file url with new PDF url
+      const ocrPdf = await getOcrPdf(file);
+      if (ocrPdf) {
+        // Update file url if OCR success
+        setPdfOcrUrl(URL.createObjectURL(ocrPdf));
 
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
+        // Index words
+        // const data = res.data.words;
+        // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
+        //   return {
+        //     keyword: text,
+        //     x1: x0,
+        //     y1: y0,
+        //     x2: x1,
+        //     y2: y1,
+        //   };
+        // });
+        // await fetch("/api/index", {
+        //   method: "POST",
+        //   headers: { "Content-Type": "application/json" },
+        //   body: JSON.stringify({
+        //     pdfId,
+        //     words,
+        //   }),
+        // });
+      }
     }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
+    
+    fetch("/api/pdf/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: pdfId,
+        name: file.name,
+        base64: await convertPdfToBase64(file),
+      }),
+    })
+    .then((res) => {
+      if (res.ok) {
+        setPdfUrl(fileUrl);
+        setPdfUploaded(true);
+        setPdfName(file.name);
+        setPdfId(pdfId);
+        setLoading(false);
+      } else {
+        throw new Error("Failed to upload PDF to database");
+      }
+    });
   };
 
   useEffect(() => {
@@ -98,11 +109,10 @@ export default function App() {
       const res = await fetch("/api/highlight/get", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pdfId),
+        body: JSON.stringify({pdfId: pdfId}),
       });
       if (res.ok) {
         const resHighlights = await res.json();
-        console.log("getHighlights", pdfId, resHighlights);
         if (resHighlights) {
           const highlights = resHighlights.map(
             (storedHighlight: StoredHighlight) => {
@@ -154,6 +164,21 @@ export default function App() {
     setHighlights([]);
   };
 
+  const saveHighlights = async (id: string, highlights: StoredHighlight[]) => {
+    const body =
+      storageMethod === StorageMethod.sqlite
+        ? {
+            id,
+            highlights: highlights,
+          }
+        : highlights;
+    await fetch("/api/highlight/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+  }
+
   const handleSearch = async () => {
     if (pdfUrl && searchTerm) {
       const keywords = searchTerm.split("|");
@@ -177,7 +202,7 @@ export default function App() {
       console.log("Current zoom level:", currentZoom);
 
       let newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
-      if (newHighlights.length === 0 && pdfOcrUrl) {
+      if (debugOcrPdfEnabled && newHighlights.length === 0 && pdfOcrUrl) {
         // Try searching the OCR pdf
         // This step is sometimes required due to the OCR process
         //   possibly being lossy (pdf -> png -> pdf)
@@ -185,27 +210,72 @@ export default function App() {
         newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
       }
 
-      console.log("newHighlights:", JSON.stringify(newHighlights, null, 2));
+      let newStoredHighlights = newHighlights.map((highlight) => {
+        if (pdfId) {
+          return IHighlightToStoredHighlight(highlight, pdfId);
+        }
+      }).filter((highlight) => highlight !== undefined) as StoredHighlight[];
 
-      const updatedHighlights = [...highlights, ...newHighlights];
+      if(pdfId) {
+        saveHighlights(pdfId, newStoredHighlights);
+      }
 
-      if (pdfName && pdfId) {
-        const storedHighlights = updatedHighlights.map((highlight) =>
-          IHighlightToStoredHighlight(highlight, pdfId)
-        );
-        const body =
-          storageMethod === StorageMethod.sqlite
-            ? {
-                pdfId,
-                highlights: storedHighlights,
-              }
-            : storedHighlights;
-        await fetch("/api/highlight/update", {
+      if(debugMultiSearchEnabled) {
+        const res = await fetch("/api/pdf/get", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+          body: JSON.stringify({
+            amount: 20
+          }),
         });
+  
+        if (res.ok) {
+          const body = await res.json();
+          for (const pdf of body as StoredPdf[]) {
+            if (pdf.id === pdfId) {
+              continue;
+            }
+            const dataUrl = "data:application/pdf;base64," + pdf.base64;
+            let blobUrl = URL.createObjectURL(await DataUrlToBlob(dataUrl));
+            let extraHighlights = await searchPdf(keywords, blobUrl, 1);
+            if (debugOcrPdfEnabled && extraHighlights.length === 0) {
+              const ocrPdf = await getOcrPdf((await DataUrlToBlob(dataUrl)) as File);
+              if (ocrPdf) {
+                const ocrPdfUrl = URL.createObjectURL(ocrPdf);
+                extraHighlights = await searchPdf(keywords, ocrPdfUrl, 1);
+              }
+            }
+            let extraStoredHighlights = extraHighlights.map((highlight) => {
+              return IHighlightToStoredHighlight(highlight, pdf.id);
+            });
+            newStoredHighlights = [...newStoredHighlights, ...extraStoredHighlights];
+            saveHighlights(pdf.id, extraStoredHighlights);
+            const res2 = await fetch("/api/highlight/get", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({pdfId: pdf.id}),
+            });
+            if (res2.ok) {
+              const resHighlights = await res2.json();
+              if (resHighlights) {
+                newStoredHighlights = [...newStoredHighlights, ...resHighlights];
+              }
+            }
+          }
+        } else {
+          throw new Error("Failed to get PDF from database")
+        }
       }
+
+      if (pdfName && pdfId) {
+        let updatedStoredHighlights = highlights.map((highlight) => {
+          return IHighlightToStoredHighlight(highlight, pdfId);
+        }).filter((highlight) => highlight !== undefined) as StoredHighlight[];
+        updatedStoredHighlights = [...updatedStoredHighlights, ...newStoredHighlights];
+        setStoredHighlights(updatedStoredHighlights);
+      }
+
+      const updatedHighlights = [...highlights, ...newHighlights];
 
       setHighlights(updatedHighlights);
     }
@@ -232,6 +302,31 @@ export default function App() {
       scrollViewerTo.current(highlight);
     }
   }, [highlights]);
+
+  const changeCurrentPdf = async (pdfId: string) => {
+    const res = await fetch("/api/pdf/get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        id: pdfId,
+        amount: 1
+      }),
+    });
+    if (res.ok) {
+      setPdfUploaded(false);
+      setLoading(true);
+      const body = await res.json();
+      const pdf = body as StoredPdf;
+      const dataUrl = "data:application/pdf;base64," + pdf.base64;
+      let blob = await DataUrlToBlob(dataUrl);
+      let blobUrl = URL.createObjectURL(blob);
+      setPdfUrl(blobUrl);
+      setPdfUploaded(true);
+      setPdfName(pdf.name);
+      setPdfId(pdf.id);
+      setLoading(false);
+    }
+  }
 
   useEffect(() => {
     window.addEventListener("hashchange", scrollToHighlightFromHash, false);
@@ -285,12 +380,15 @@ export default function App() {
               pdfName={pdfName}
               pdfId={pdfId}
               highlights={highlights}
+              storedHighlights={storedHighlights}
+              setStoredHighlights={setStoredHighlights}
               setHighlights={setHighlights}
               highlightsKey={highlightsKey}
               pdfViewerRef={pdfViewerRef}
               resetHash={resetHash}
               scrollViewerTo={scrollViewerTo}
               scrollToHighlightFromHash={scrollToHighlightFromHash}
+              changeCurrentPdf={changeCurrentPdf}
             />
           )}
         </div>

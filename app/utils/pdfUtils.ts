@@ -1,6 +1,7 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
+import { createWorker } from "tesseract.js";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -233,3 +234,28 @@ export const convertPdfToImages = async (file: File) => {
   canvas.remove();
   return images;
 };
+
+// I thought I have to write my own b64 encoder but it seems this does it already
+// https://developer.mozilla.org/en-US/docs/Web/API/FileReader/result
+export const convertPdfToBase64 = async (file: File) => {
+  const data = await readFileData(file);
+  if (!data) {
+    return "";
+  }
+  const dataString = data as string;
+  return dataString.split(",")[1];
+}
+
+export const getOcrPdf = async (file: File) => {
+  const i = await convertPdfToImages(file);
+  const worker = await createWorker("eng");
+  const res = await worker.recognize(
+    i[0],
+    { pdfTitle: "ocr-out" },
+    { pdf: true }
+  );
+  if (res.data.pdf) {
+    return new File([new Uint8Array(res.data.pdf)], file.name.split(".")[0] + "_ocr" + file.name.split(".")[1],  { type: "application/pdf" });
+  }
+  return null;
+}

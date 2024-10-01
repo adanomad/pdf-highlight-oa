@@ -60,3 +60,11 @@ export const StoredHighlightToIHighlight = (
     id: storedHighlight.id,
   };
 };
+
+export const DataUrlToBlob = async (
+  dataUrl: string
+): Promise<Blob> => {
+  return (await fetch(dataUrl)
+    .then((res) => { return res.arrayBuffer(); })
+    .then((buf) => { return new Blob([buf], { type: "application/pdf" });}));
+}

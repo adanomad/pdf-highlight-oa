@@ -2,7 +2,7 @@
 // Bonus challenge.
 
 import { StoredHighlight } from "./types";
-import SQLiteDatabase from "./sqliteUtils";
+import { HighlightsSQLiteDatabase } from "./sqliteUtils";
 
 // TODO: Import necessary types and libraries
 // Consider importing types from your PDF highlighting library
@@ -29,10 +29,10 @@ import SQLiteDatabase from "./sqliteUtils";
 // TODO: Define a class to handle highlight storage operations
 
 class HighlightStorage {
-  private db: SQLiteDatabase;
+  private db: HighlightsSQLiteDatabase;
 
   constructor() {
-    this.db = new SQLiteDatabase();
+    this.db = new HighlightsSQLiteDatabase();
   }
 
   async saveHighlight(highlight: StoredHighlight): Promise<void> {
