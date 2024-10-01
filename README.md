@@ -13,7 +13,7 @@ I chose to implement a feature that would automatically upload the PDF into the 
 - First I tried to handle the backend functions by creating a new table in sqlite to store the pdf files.Each PDF uploaded is assigned a primary key, its filename, so that if the user were to upload the same document twice, the duplicate document would not take up unnecessary space. This is assuming that no two users are going to upload the same doc.
 - Also created a new set of routes for sending and retrieving PDF files, similar to the routes used to send and retrieve highlighting.
 - A savePdf function in sqliteUtilPdf inserts the PDF data into the database using an SQL statement. I actually realized later that I shouldn’t have created a separate utils file and class for the PDF database operations as sqliteUtils was meant to handle all database operations.
-- After the backend function is ready, I started working on the front end by modifying the handleFileUpload() function in App.tsx, first converting the file into a base64 string using the FileReader: readAsDataURL() method before sending the converted PDF file as a string, from the client to the server using the Fetch API with the “POST” method.
+- After the backend function is ready, I started working on the front end by modifying the handleFileUpload() function in App.tsx. As soon as the user uploads a file, I first convert it into a base64 string using the FileReader: readAsDataURL() method before sending the converted PDF file as a string, from the client to the server using the Fetch API with the “POST” method.
 
 
 ## Challenges:
