@@ -5,7 +5,7 @@ import { Input } from "./Input";
 import { Upload } from "lucide-react";
 
 interface PdfUploaderProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (files: File[]) => void;
   pdfUploaded: boolean;
 }
 
@@ -14,8 +14,9 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({
   pdfUploaded,
 }) => {
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      onFileUpload(event.target.files[0]);
+    if (event.target.files) {
+      const filesArray = Array.from(event.target.files);
+      onFileUpload(filesArray);
     }
   };
 
@@ -27,6 +28,7 @@ const PdfUploader: React.FC<PdfUploaderProps> = ({
         onChange={handleFileUpload}
         className="hidden"
         id="pdf-upload"
+        multiple
       />
       <label htmlFor="pdf-upload">
         <Button as="span" className="w-full">

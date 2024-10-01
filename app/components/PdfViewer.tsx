@@ -119,6 +119,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           onError={(error) => console.error("Error loading PDF:", error)}
         >
           {(pdfDocument) => (
+            pdfDocument ? (
             <PdfHighlighter
               ref={pdfViewerRef}
               key={highlightsKey}
@@ -208,7 +209,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 scrollToHighlightFromHash();
               }}
             />
-          )}
+          ) : <></> )}
         </PdfLoader>
       </div>
     </div>
