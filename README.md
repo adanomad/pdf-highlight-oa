@@ -18,16 +18,15 @@ A new SQLite table will be automatically if it did not yet exist to store the PD
 
 ## Challenges:
 - One major challenge I faced was my unfamiliarity with the application’s code and file structures.
-- To overcome this, I started by using this application as an end user, uploading a few files, downloading a few sets of highlights. This allowed me to quickly figure out what the application was designed to do.
-- I also downloaded DB Browser, which allows me to visualize the database to which the highlights are saved.
-- I used VSCode’s "Find all references" and "Go to Definition" tools to quickly navigate function calls and returns.
-- I also added several console.log statements across the entire application to help me visualize and keep track of the status, value, and type of various variables and objects. This was key to allowing me to understand the journey of data from the client to the server and to the database
-- During the analysis process, I created a design diagram to help myself visualize the existing design structure.
+  - To overcome this, I started by using this application as an end user, uploading a few files, downloading a few sets of highlights. This allowed me to quickly figure out what the application was designed to do.
+  - I also downloaded DB Browser, which allows me to visualize the database to which the highlights are saved.
+  - I used VSCode’s "Find all references" and "Go to Definition" tools to quickly navigate function calls and returns.
+  - I also added several console.log statements across the entire application to help me visualize and keep track of the status, value, and type of various variables and objects. This was key to allowing me to understand the journey of data from the client to the server and to the database
+  - During the analysis process, I created a design diagram to help myself visualize the existing design structure.
 - Another major challenge I faced was my unfamiliarity with several of the libraries, classes, and objects used throughout this application.
-- The way I overcame this was through the thorough studying of their documentation and uses on the web. One thing that really helped me figure these out quickly was avoiding the temptation to take shortcuts during my reading. It is a lot faster to read through the basics than it is to skip those parts and then later trying to figure them out on your own.
+  - The way I overcame this was through the thorough studying of their documentation and uses on the web. One thing that really helped me figure these out quickly was avoiding the temptation to take shortcuts during my reading. It is a lot faster to read through the basics than it is to skip those parts and then later trying to figure them out on your own.
 
 ![REACT code structure (2) (1)](https://github.com/user-attachments/assets/2ba5d2a3-4b97-4e47-9c66-73674d28edf3)
-
 Figure 1.1
 
 ## Thoughts about optional features:
