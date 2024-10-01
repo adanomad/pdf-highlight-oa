@@ -18,6 +18,7 @@ import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import { storageMethod } from "../utils/env";
+import DeleteAll from "./DeleteAll"
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
@@ -30,65 +31,40 @@ export default function App() {
   const [highlights, setHighlights] = useState<Array<IHighlight>>([]);
   const [highlightsKey, setHighlightsKey] = useState(0);
   const [loading, setLoading] = useState(false);
+  const [refreshData, setRefreshData] = useState(false);
   const pdfViewerRef = useRef<any>(null);
+
   // const session = useSession();
 
   useEffect(() => {
     setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
 
-  const handleFileUpload = async (file: File) => {
+  const handleFileUpload = async (files: File[]) => {
     setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
-
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
+    
+    const formData = new FormData();
+    files.forEach(file => {
+      formData.append("file", file);
+    });
+  
+    try {
+      const uploadResponse = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+  
+      if (!uploadResponse.ok) {
+        console.error(uploadResponse);
+      }
+    } catch (error) {
+      console.error(error);
+    } finally {
+      setPdfUploaded(true);
+      setLoading(false);
+      setRefreshData(prev => !prev);
     }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
-  };
+  };  
 
   useEffect(() => {
     const getHighlights = async () => {
@@ -244,6 +220,45 @@ export default function App() {
     };
   }, [scrollToHighlightFromHash]);
 
+  useEffect(() => {
+    const fetchPdfFile = async () => {
+      setLoading(true);
+      setPdfUrl(null);
+      setPdfName(null);
+      setPdfId(null);
+      try {
+        const response = await fetch("/api/fetch");
+        const blobData = await response.blob();
+
+        const filenames = response.headers.get('X-Filenames');
+        const startPages = response.headers.get('X-Start-Pages');
+        console.log(filenames);
+        console.log(startPages);
+        
+        const newPdfFile = URL.createObjectURL(blobData);
+        setPdfUrl(newPdfFile);
+        setPdfName("Highlights");
+        setPdfId("test");
+        return () => {
+          URL.revokeObjectURL(newPdfFile);
+        };
+      } catch (error) {
+        console.error(error);
+      } finally {
+        setLoading(false);
+      }
+    };
+
+    fetchPdfFile();
+  }, [refreshData]);
+
+  const handleDeletePdfs = async () => {
+    const response = await fetch("/api/delete", {
+      method: "DELETE",
+    });
+    setRefreshData(prev => !prev);
+  };
+
   return (
     <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
       <div className="flex-1">
@@ -256,6 +271,9 @@ export default function App() {
             <PdfUploader
               onFileUpload={handleFileUpload}
               pdfUploaded={pdfUploaded}
+            />
+            <DeleteAll
+              onDeletePdfs={handleDeletePdfs}
             />
             {
               /* session.status === "authenticated" &&  */ pdfId && (
@@ -280,18 +298,24 @@ export default function App() {
               <Spinner />
             </div>
           ) : (
-            <PdfViewer
-              pdfUrl={pdfUrl}
-              pdfName={pdfName}
-              pdfId={pdfId}
-              highlights={highlights}
-              setHighlights={setHighlights}
-              highlightsKey={highlightsKey}
-              pdfViewerRef={pdfViewerRef}
-              resetHash={resetHash}
-              scrollViewerTo={scrollViewerTo}
-              scrollToHighlightFromHash={scrollToHighlightFromHash}
-            />
+            <div>
+              {pdfUrl ? (
+                <PdfViewer
+                  pdfUrl={pdfUrl}
+                  pdfName={pdfName}
+                  pdfId={pdfId}
+                  highlights={highlights}
+                  setHighlights={setHighlights}
+                  highlightsKey={highlightsKey}
+                  pdfViewerRef={pdfViewerRef}
+                  resetHash={resetHash}
+                  scrollViewerTo={scrollViewerTo}
+                  scrollToHighlightFromHash={scrollToHighlightFromHash}
+                />
+              ) : (
+                <div className="text-center text-gray-500">No PDFs</div>
+              )}
+            </div>
           )}
         </div>
       </div>
