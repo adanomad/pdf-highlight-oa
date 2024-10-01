@@ -3,6 +3,7 @@
 import React, { useCallback, useState, useEffect, useRef } from "react";
 import PdfUploader from "./PdfUploader";
 import KeywordSearch from "./KeywordSearch";
+import ImageSearch from "./ImageSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
@@ -267,13 +268,17 @@ export default function App() {
               )
             }
             {pdfUrl && (
+              <>
               <KeywordSearch
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                handleSearch={handleSearch}
-                resetHighlights={resetHighlights}
-              />
-            )}
+              searchTerm={searchTerm}
+              setSearchTerm={setSearchTerm}
+              handleSearch={handleSearch}
+              resetHighlights={resetHighlights}
+            />
+            {/* Add the ImageSearch component here */}
+            <ImageSearch pdfUrl={pdfUrl} />
+          </>
+          )}
           </div>
           {loading ? (
             <div className="w-full flex items-center justify-center">
