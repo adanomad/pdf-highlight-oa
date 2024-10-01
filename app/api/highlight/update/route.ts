@@ -31,6 +31,8 @@ async function handleRequest(
   }
 }
 
+
+
 async function saveHighlights(body: any, db?: HighlightStorage): Promise<void> {
   if (db) {
     if (Array.isArray(body.highlights)) {
@@ -46,6 +48,8 @@ async function saveHighlights(body: any, db?: HighlightStorage): Promise<void> {
     }
   }
 }
+
+
 
 async function removeHighlight(
   body: any,
