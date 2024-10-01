@@ -31,12 +31,50 @@ export default function App() {
   const [highlightsKey, setHighlightsKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
+  const [pdfBase64, setPdfBase64] = useState<string | ArrayBuffer | null>("dtrfrdf");
   // const session = useSession();
 
   useEffect(() => {
     setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
+  // Convert a file to base64 string
+  const toBase64 = (file: File) => {
+    return new Promise((resolve, reject) => {
+      const fileReader = new FileReader();
 
+      fileReader.readAsDataURL(file);
+
+      fileReader.onload = () => {
+        resolve(fileReader.result);
+      };
+
+      fileReader.onerror = (error) => {
+        reject(error);
+      };
+    });
+  };
+  function downloadPDF(pdf: string, id: string) {//convert the base64 back to a pdf file and download it
+    const linkSource = `${pdf}`;
+    const downloadLink = document.createElement("a");
+    const fileName = id.concat(".pdf");
+
+    downloadLink.href = linkSource;
+    downloadLink.download = fileName;
+    downloadLink.click();
+}
+  //get the pdf from db and downloads it to your computer. This function is not used, but may be useful in the future
+  const getPdfFromDb=async(id: string) => {
+    const res = await fetch("/api/pdf/get", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({pdfId:id}),
+    });
+
+    if (res.ok) {
+      const resPdf = await res.json();
+      downloadPDF(resPdf[0].content, id);
+    }
+  }
   const handleFileUpload = async (file: File) => {
     setLoading(true);
     let fileUrl = URL.createObjectURL(file);
@@ -83,6 +121,16 @@ export default function App() {
       //   }),
       // });
     }
+    const base64 = await toBase64(file as File);
+    setPdfBase64(base64 as string);
+    await fetch("/api/pdf/update", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({id: pdfId, content: base64 as string}),
+    });
+    console.log(pdfId);
+    //getPdfFromDb(pdfId);
+
     setPdfUrl(fileUrl);
     setPdfUploaded(true);
     setPdfName(file.name);
@@ -115,6 +163,32 @@ export default function App() {
     };
     getHighlights();
   }, [pdfName, pdfId]);
+
+  // useEffect(() => {
+  //   const getHighlights = async () => {
+  //     if (!pdfName) {
+  //       return;
+  //     }
+  //     const res = await fetch("/api/pdf/get", {
+  //       method: "POST",
+  //       headers: { "Content-Type": "application/json" },
+  //       body: JSON.stringify(pdfId),
+  //     });
+  //     if (res.ok) {
+  //       const resPdf = await res.json();
+  //       console.log("getHighlights", pdfId, resPdf);
+  //       if (resPdf) {
+  //         const highlights = resPdf.map(
+  //           (storedHighlight: StoredHighlight) => {
+  //             return StoredHighlightToIHighlight(storedHighlight);
+  //           }
+  //         );
+  //         setHighlights(highlights);
+  //       }
+  //     }
+  //   };
+  //   getHighlights();
+  // }, [pdfId]);
 
   const handleHighlightUpload = (file: File) => {
     const fileUrl = URL.createObjectURL(file);
@@ -210,6 +284,8 @@ export default function App() {
       setHighlights(updatedHighlights);
     }
   };
+
+  
 
   const parseIdFromHash = () => {
     return document.location.hash.slice("#highlight-".length);

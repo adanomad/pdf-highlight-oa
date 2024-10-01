@@ -11,7 +11,7 @@ class SQLiteDatabase {
 
   constructor() {
     this.db = new sqlite3.Database(
-      path.join(process.cwd(), "highlights.db"),
+      path.join(process.cwd(), "database.db"),
       sqlite3.OPEN_READWRITE | sqlite3.OPEN_CREATE,
       (error) => {
         if (error) {
