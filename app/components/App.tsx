@@ -63,31 +63,37 @@ export default function App() {
       const fileOcrUrl = URL.createObjectURL(blob);
       setPdfOcrUrl(fileOcrUrl);
 
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
+      // Convert the file to ArrayBuffer for sending as BLOB
+      var fileToUpload = new File([blob], file.name, {
+        type: "application/pdf",
+      });
+      const arrayBuffer = await fileToUpload.arrayBuffer();
+      const buffer = new Uint8Array(arrayBuffer);
+
+      try {
+        // Make a POST request to upload the PDF to the backend
+        await fetch("/api/pdf/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            pdfId,
+            fileName: fileToUpload.name,
+            data: Array.from(buffer), // Convert Uint8Array to Array for JSON serialization
+          }),
+        });
+
+        // Update states with the original file URL and metadata
+        const fileUrl = URL.createObjectURL(fileToUpload);
+        setPdfUrl(fileUrl);
+        setPdfUploaded(true);
+        setPdfName(file.name);
+        setPdfId(pdfId);
+      } catch (error) {
+        console.error("Failed to upload PDF:", error);
+      } finally {
+        setLoading(false);
+      }
     }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
   };
 
   useEffect(() => {
