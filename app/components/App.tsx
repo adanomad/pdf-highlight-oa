@@ -6,7 +6,12 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import {
+  convertPdfToImages,
+  readFileData,
+  searchPdf,
+  getNextId,
+} from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
 import { StoredHighlight, StorageMethod } from "../utils/types";
@@ -49,7 +54,17 @@ export default function App() {
     //   perform OCR,
     //   convert output back to PDF
     //   update file url with new PDF url
-    const i = await convertPdfToImages(file, pdfId);
+    const data = await readFileData(file);
+    await fetch("/api/pdf", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        data,
+        pdfId,
+        id: getNextId(),
+      }),
+    });
+    const i = await convertPdfToImages(data);
     const worker = await createWorker("eng");
     const res = await worker.recognize(
       i[0],
