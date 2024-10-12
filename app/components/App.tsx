@@ -3,7 +3,6 @@
 import React, { useCallback, useState, useEffect, useRef } from "react";
 import PdfUploader from "./PdfUploader";
 import KeywordSearch from "./KeywordSearch";
-import ImageSearch from "./ImageSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
@@ -16,7 +15,6 @@ import {
   StoredHighlightToIHighlight,
 } from "../utils/utils";
 import { createWorker } from "tesseract.js";
-// import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import { storageMethod } from "../utils/env";
 
@@ -30,67 +28,52 @@ export default function App() {
   const [highlightUrl, setHighlightUrl] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Array<IHighlight>>([]);
   const [highlightsKey, setHighlightsKey] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [pdfLoading, setPdfLoading] = useState(false);
+  const [imageSearchLoading, setImageSearchLoading] = useState(false); // Separate loading for Image Search
+  const [imageSearchResults, setImageSearchResults] = useState<any[]>([]); // Store image search results
   const pdfViewerRef = useRef<any>(null);
-  // const session = useSession();
 
   useEffect(() => {
     setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
 
+  // Handle PDF Upload
   const handleFileUpload = async (file: File) => {
-    setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
+    console.log("File received for upload:", file); // Check if file is being received
 
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
+    setPdfLoading(true); // Start loading when PDF is being uploaded
+    let fileUrl = URL.createObjectURL(file);
+    console.log("Generated file URL:", fileUrl); // Log to see the generated URL
+
+    const pdfId = getPdfId(file.name);
+
+    try {
+      const i = await convertPdfToImages(file);
+      console.log("Converted PDF to images:", i); // Log conversion result
+
+      const worker = await createWorker("eng");
+      const res = await worker.recognize(i[0], { pdfTitle: "ocr-out" }, { pdf: true });
+      const pdf = res.data.pdf;
+
+      if (pdf) {
+        const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
+        const fileOcrUrl = URL.createObjectURL(blob);
+        setPdfOcrUrl(fileOcrUrl);
+        console.log("Generated OCR URL:", fileOcrUrl); // Log the OCR URL
+      }
+    } catch (error) {
+      console.error("Error during PDF processing:", error); // Log any error
     }
-    setPdfUrl(fileUrl);
+
+    setPdfUrl(fileUrl); // Set the generated URL
+    console.log("Set pdfUrl:", fileUrl); // Confirm the pdfUrl is being set
     setPdfUploaded(true);
     setPdfName(file.name);
     setPdfId(pdfId);
-    setLoading(false);
+    setPdfLoading(false); // Stop loading when PDF upload is done
   };
 
+  // Fetch Highlights for the PDF
   useEffect(() => {
     const getHighlights = async () => {
       if (!pdfName) {
@@ -103,7 +86,6 @@ export default function App() {
       });
       if (res.ok) {
         const resHighlights = await res.json();
-        console.log("getHighlights", pdfId, resHighlights);
         if (resHighlights) {
           const highlights = resHighlights.map(
             (storedHighlight: StoredHighlight) => {
@@ -122,44 +104,46 @@ export default function App() {
     setHighlightUrl(fileUrl);
   };
 
-  useEffect(() => {
-    const setHighlightsFromFile = async () => {
-      if (!highlightUrl || !pdfUploaded) {
-        return;
-      }
-      const res = await fetch(highlightUrl);
-      if (res.ok) {
-        const data = await res.json();
-        const highlights = data.map((highlight: StoredHighlight) =>
-          StoredHighlightToIHighlight(highlight)
-        );
-        setHighlights(highlights);
-        const body =
-          storageMethod === StorageMethod.sqlite
-            ? {
-                pdfId,
-                highlights: data,
-              }
-            : data;
-        await fetch("/api/highlight/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      }
-    };
-    setHighlightsFromFile();
-  }, [highlightUrl, pdfUploaded, pdfId]);
+  // Handle Image Search Request
+  const handleImageSearch = async () => {
+    if (!pdfUrl) {
+      alert("Please upload a PDF before searching for images.");
+      return;
+    }
 
-  const resetHighlights = () => {
-    setHighlights([]);
+    const formData = new FormData();
+    const pdfFile = await fetch(pdfUrl).then((res) => res.blob()); // Convert URL to a Blob (PDF file)
+    formData.append("pdf", pdfFile);
+    formData.append("searchTerm", searchTerm);
+
+    setImageSearchLoading(true); // Start loading for Image Search
+
+    try {
+      const response = await fetch("/api/image-search/update", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (response.ok) {
+        const data = await response.json();
+        setImageSearchResults(data); // Store the image search results
+        console.log("Image search results:", data); // Log the results to verify
+      } else {
+        console.error("Image search failed.");
+      }
+    } catch (error) {
+      console.error("Error:", error);
+    } finally {
+      setImageSearchLoading(false); // Stop image search loading
+    }
   };
 
+  // Handle Keyword Search Request
   const handleSearch = async () => {
     if (pdfUrl && searchTerm) {
-      const keywords = searchTerm.split("|");
       let currentZoom = 1;
 
+      // Text Search Logic
       if (pdfViewerRef.current) {
         if ("scale" in pdfViewerRef.current) {
           currentZoom = pdfViewerRef.current.scale;
@@ -175,18 +159,10 @@ export default function App() {
         }
       }
 
-      console.log("Current zoom level:", currentZoom);
-
-      let newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
+      let newHighlights = await searchPdf([searchTerm], pdfUrl, currentZoom);
       if (newHighlights.length === 0 && pdfOcrUrl) {
-        // Try searching the OCR pdf
-        // This step is sometimes required due to the OCR process
-        //   possibly being lossy (pdf -> png -> pdf)
-        //   which means some words are missing/malformed
-        newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
+        newHighlights = await searchPdf([searchTerm], pdfOcrUrl, currentZoom);
       }
-
-      console.log("newHighlights:", JSON.stringify(newHighlights, null, 2));
 
       const updatedHighlights = [...highlights, ...newHighlights];
 
@@ -210,6 +186,10 @@ export default function App() {
 
       setHighlights(updatedHighlights);
     }
+  };
+
+  const resetHighlights = () => {
+    setHighlights([]);
   };
 
   const parseIdFromHash = () => {
@@ -254,49 +234,78 @@ export default function App() {
 
         <div className="max-w-4xl mx-auto space-y-6 mb-8">
           <div className="max-w-xl mx-auto space-y-6">
-            <PdfUploader
-              onFileUpload={handleFileUpload}
-              pdfUploaded={pdfUploaded}
-            />
-            {
-              /* session.status === "authenticated" &&  */ pdfId && (
-                <HighlightUploader
-                  onFileUpload={handleHighlightUpload}
-                  highlights={highlights}
-                  pdfId={pdfId}
-                />
-              )
-            }
+            <PdfUploader onFileUpload={handleFileUpload} pdfUploaded={pdfUploaded} />
+            {pdfUploaded && (
+              <div>
+                <p>PDF Uploaded Successfully. URL: {pdfUrl}</p> {/* Log URL */}
+              </div>
+            )}
+
+            {pdfId && (
+              <HighlightUploader
+                onFileUpload={handleHighlightUpload}
+                highlights={highlights}
+                pdfId={pdfId}
+              />
+            )}
+
             {pdfUrl && (
               <>
-              <KeywordSearch
-              searchTerm={searchTerm}
-              setSearchTerm={setSearchTerm}
-              handleSearch={handleSearch}
-              resetHighlights={resetHighlights}
-            />
-            {/* Add the ImageSearch component here */}
-            <ImageSearch pdfUrl={pdfUrl} />
-          </>
-          )}
+                <KeywordSearch
+                  searchTerm={searchTerm}
+                  setSearchTerm={setSearchTerm}
+                  handleSearch={handleSearch}
+                  resetHighlights={resetHighlights}
+                />
+                <button onClick={handleImageSearch} style={{ color: "black" }}>
+                  Search for Images
+                </button>
+                {/* Loading for Image Search */}
+                {imageSearchLoading && (
+                  <div className="w-full flex items-center justify-center">
+                    <Spinner />
+                  </div>
+                )}
+                {/* Display Image Search Results */}
+                <div>
+                  {imageSearchResults.length > 0 ? (
+                    <>
+                      <h3>Image Search Results:</h3>
+                      {imageSearchResults.map((result, index) => (
+                        <p key={index}>Image {result.imageIndex}: Similarity: {result.similarity}</p>
+                      ))}
+                    </>
+                  ) : (
+                    <p>No image search results yet.</p>
+                  )}
+                </div>
+              </>
+            )}
           </div>
-          {loading ? (
+
+          {pdfUrl ? (
+            <>
+              <PdfViewer
+                pdfUrl={pdfUrl}
+                pdfName={pdfName}
+                pdfId={pdfId}
+                highlights={highlights}
+                setHighlights={setHighlights}
+                highlightsKey={highlightsKey}
+                pdfViewerRef={pdfViewerRef}
+                resetHash={resetHash}
+                scrollViewerTo={scrollViewerTo}
+                scrollToHighlightFromHash={scrollToHighlightFromHash}
+                />
+            </>
+          ) : (
+            <p>No PDF to display</p>
+          )}
+
+          {pdfLoading && (
             <div className="w-full flex items-center justify-center">
               <Spinner />
             </div>
-          ) : (
-            <PdfViewer
-              pdfUrl={pdfUrl}
-              pdfName={pdfName}
-              pdfId={pdfId}
-              highlights={highlights}
-              setHighlights={setHighlights}
-              highlightsKey={highlightsKey}
-              pdfViewerRef={pdfViewerRef}
-              resetHash={resetHash}
-              scrollViewerTo={scrollViewerTo}
-              scrollToHighlightFromHash={scrollToHighlightFromHash}
-            />
           )}
         </div>
       </div>
