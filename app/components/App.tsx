@@ -15,6 +15,7 @@ import {
   StoredHighlightToIHighlight,
 } from "../utils/utils";
 import { createWorker } from "tesseract.js";
+// import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import { storageMethod } from "../utils/env";
 
@@ -28,52 +29,72 @@ export default function App() {
   const [highlightUrl, setHighlightUrl] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Array<IHighlight>>([]);
   const [highlightsKey, setHighlightsKey] = useState(0);
-  const [pdfLoading, setPdfLoading] = useState(false);
-  const [imageSearchLoading, setImageSearchLoading] = useState(false); // Separate loading for Image Search
-  const [imageSearchResults, setImageSearchResults] = useState<any[]>([]); // Store image search results
+  const [loading, setLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
+  const [pdfFile, setPdfFile] = useState<File | null>(null); // Store the uploaded PDF file
+  const [searchResults, setSearchResults] = useState<Array<{ imageIndex: number; similarity: number }>>([]);
+  
+  // const session = useSession();
 
   useEffect(() => {
     setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
 
-  // Handle PDF Upload
   const handleFileUpload = async (file: File) => {
-    console.log("File received for upload:", file); // Check if file is being received
-
-    setPdfLoading(true); // Start loading when PDF is being uploaded
+    setLoading(true);
     let fileUrl = URL.createObjectURL(file);
-    console.log("Generated file URL:", fileUrl); // Log to see the generated URL
 
-    const pdfId = getPdfId(file.name);
+    setPdfFile(file); // Store the file object
+    const pdfId = getPdfId(
+      file.name,
+      /* session.data?.user?.email ?? */ undefined
+    );
+    // Creating a searchable PDF:
+    // Convert uploaded PDF file to b64 image,
+    //   perform OCR,
+    //   convert output back to PDF
+    //   update file url with new PDF url
+    const i = await convertPdfToImages(file);
+    const worker = await createWorker("eng");
+    const res = await worker.recognize(
+      i[0],
+      { pdfTitle: "ocr-out" },
+      { pdf: true }
+    );
+    const pdf = res.data.pdf;
+    if (pdf) {
+      // Update file url if OCR success
+      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
+      const fileOcrUrl = URL.createObjectURL(blob);
+      setPdfOcrUrl(fileOcrUrl);
 
-    try {
-      const i = await convertPdfToImages(file);
-      console.log("Converted PDF to images:", i); // Log conversion result
-
-      const worker = await createWorker("eng");
-      const res = await worker.recognize(i[0], { pdfTitle: "ocr-out" }, { pdf: true });
-      const pdf = res.data.pdf;
-
-      if (pdf) {
-        const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-        const fileOcrUrl = URL.createObjectURL(blob);
-        setPdfOcrUrl(fileOcrUrl);
-        console.log("Generated OCR URL:", fileOcrUrl); // Log the OCR URL
-      }
-    } catch (error) {
-      console.error("Error during PDF processing:", error); // Log any error
+      // Index words
+      // const data = res.data.words;
+      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
+      //   return {
+      //     keyword: text,
+      //     x1: x0,
+      //     y1: y0,
+      //     x2: x1,
+      //     y2: y1,
+      //   };
+      // });
+      // await fetch("/api/index", {
+      //   method: "POST",
+      //   headers: { "Content-Type": "application/json" },
+      //   body: JSON.stringify({
+      //     pdfId,
+      //     words,
+      //   }),
+      // });
     }
-
-    setPdfUrl(fileUrl); // Set the generated URL
-    console.log("Set pdfUrl:", fileUrl); // Confirm the pdfUrl is being set
+    setPdfUrl(fileUrl);
     setPdfUploaded(true);
     setPdfName(file.name);
     setPdfId(pdfId);
-    setPdfLoading(false); // Stop loading when PDF upload is done
+    setLoading(false);
   };
 
-  // Fetch Highlights for the PDF
   useEffect(() => {
     const getHighlights = async () => {
       if (!pdfName) {
@@ -86,6 +107,7 @@ export default function App() {
       });
       if (res.ok) {
         const resHighlights = await res.json();
+        console.log("getHighlights", pdfId, resHighlights);
         if (resHighlights) {
           const highlights = resHighlights.map(
             (storedHighlight: StoredHighlight) => {
@@ -104,92 +126,75 @@ export default function App() {
     setHighlightUrl(fileUrl);
   };
 
-  // Handle Image Search Request
-  const handleImageSearch = async () => {
-    if (!pdfUrl) {
-      alert("Please upload a PDF before searching for images.");
-      return;
-    }
-
-    const formData = new FormData();
-    const pdfFile = await fetch(pdfUrl).then((res) => res.blob()); // Convert URL to a Blob (PDF file)
-    formData.append("pdf", pdfFile);
-    formData.append("searchTerm", searchTerm);
-
-    setImageSearchLoading(true); // Start loading for Image Search
-
-    try {
-      const response = await fetch("/api/image-search/update", {
-        method: "POST",
-        body: formData,
-      });
-
-      if (response.ok) {
-        const data = await response.json();
-        setImageSearchResults(data); // Store the image search results
-        console.log("Image search results:", data); // Log the results to verify
-      } else {
-        console.error("Image search failed.");
+  useEffect(() => {
+    const setHighlightsFromFile = async () => {
+      if (!highlightUrl || !pdfUploaded) {
+        return;
       }
-    } catch (error) {
-      console.error("Error:", error);
-    } finally {
-      setImageSearchLoading(false); // Stop image search loading
-    }
-  };
-
-  // Handle Keyword Search Request
-  const handleSearch = async () => {
-    if (pdfUrl && searchTerm) {
-      let currentZoom = 1;
-
-      // Text Search Logic
-      if (pdfViewerRef.current) {
-        if ("scale" in pdfViewerRef.current) {
-          currentZoom = pdfViewerRef.current.scale;
-        } else if (
-          pdfViewerRef.current.viewer &&
-          "scale" in pdfViewerRef.current.viewer
-        ) {
-          currentZoom = pdfViewerRef.current.viewer.scale;
-        } else {
-          console.warn(
-            "Unable to determine current zoom level. Using default zoom of 1."
-          );
-        }
-      }
-
-      let newHighlights = await searchPdf([searchTerm], pdfUrl, currentZoom);
-      if (newHighlights.length === 0 && pdfOcrUrl) {
-        newHighlights = await searchPdf([searchTerm], pdfOcrUrl, currentZoom);
-      }
-
-      const updatedHighlights = [...highlights, ...newHighlights];
-
-      if (pdfName && pdfId) {
-        const storedHighlights = updatedHighlights.map((highlight) =>
-          IHighlightToStoredHighlight(highlight, pdfId)
+      const res = await fetch(highlightUrl);
+      if (res.ok) {
+        const data = await res.json();
+        const highlights = data.map((highlight: StoredHighlight) =>
+          StoredHighlightToIHighlight(highlight)
         );
+        setHighlights(highlights);
         const body =
           storageMethod === StorageMethod.sqlite
             ? {
                 pdfId,
-                highlights: storedHighlights,
+                highlights: data,
               }
-            : storedHighlights;
+            : data;
         await fetch("/api/highlight/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify(body),
         });
       }
-
-      setHighlights(updatedHighlights);
-    }
-  };
+    };
+    setHighlightsFromFile();
+  }, [highlightUrl, pdfUploaded, pdfId]);
 
   const resetHighlights = () => {
     setHighlights([]);
+  };
+
+  const handleSearch = async () => {
+    if (pdfFile && searchTerm) {
+      setLoading(true);
+
+      // Prepare the form data
+      const formData = new FormData();
+      formData.append('searchTerm', searchTerm);
+      formData.append('pdfFile', pdfFile);
+
+      try {
+        // Send the request to your API route
+        const response = await fetch('/api/image-search/update', {
+          method: 'POST',
+          body: formData,
+        });
+
+        if (response.ok) {
+          const data = await response.json();
+          console.log('Search Results:', data.results);
+
+          // Update the state with the search results
+          setSearchResults(data.results);
+        } else {
+          const errorData = await response.json();
+          console.error('Error:', errorData);
+          alert('Image search failed.');
+        }
+      } catch (error) {
+        console.error('Error:', error);
+        alert('An unexpected error occurred.');
+      } finally {
+        setLoading(false);
+      }
+    } else {
+      alert('Please upload a PDF file and enter a search term.');
+    }
   };
 
   const parseIdFromHash = () => {
@@ -234,56 +239,26 @@ export default function App() {
 
         <div className="max-w-4xl mx-auto space-y-6 mb-8">
           <div className="max-w-xl mx-auto space-y-6">
-            <PdfUploader onFileUpload={handleFileUpload} pdfUploaded={pdfUploaded} />
-            {pdfUploaded && (
-              <div>
-                <p>PDF Uploaded Successfully. URL: {pdfUrl}</p> {/* Log URL */}
-              </div>
-            )}
-
-            {pdfId && (
-              <HighlightUploader
-                onFileUpload={handleHighlightUpload}
-                highlights={highlights}
-                pdfId={pdfId}
-              />
-            )}
-
+            <PdfUploader
+              onFileUpload={handleFileUpload}
+              pdfUploaded={pdfUploaded}
+            />
+            {/* Existing components */}
             {pdfUrl && (
-              <>
-                <KeywordSearch
-                  searchTerm={searchTerm}
-                  setSearchTerm={setSearchTerm}
-                  handleSearch={handleSearch}
-                  resetHighlights={resetHighlights}
-                />
-                <button onClick={handleImageSearch} style={{ color: "black" }}>
-                  Search for Images
-                </button>
-                {/* Loading for Image Search */}
-                {imageSearchLoading && (
-                  <div className="w-full flex items-center justify-center">
-                    <Spinner />
-                  </div>
-                )}
-                {/* Display Image Search Results */}
-                <div>
-                  {imageSearchResults.length > 0 ? (
-                    <>
-                      <h3>Image Search Results:</h3>
-                      {imageSearchResults.map((result, index) => (
-                        <p key={index}>Image {result.imageIndex}: Similarity: {result.similarity}</p>
-                      ))}
-                    </>
-                  ) : (
-                    <p>No image search results yet.</p>
-                  )}
-                </div>
-              </>
+              <KeywordSearch
+                searchTerm={searchTerm}
+                setSearchTerm={setSearchTerm}
+                handleSearch={handleSearch}
+                resetHighlights={resetHighlights}
+              />
             )}
           </div>
 
-          {pdfUrl ? (
+          {loading ? (
+            <div className="w-full flex items-center justify-center">
+              <Spinner />
+            </div>
+          ) : (
             <>
               <PdfViewer
                 pdfUrl={pdfUrl}
@@ -296,16 +271,22 @@ export default function App() {
                 resetHash={resetHash}
                 scrollViewerTo={scrollViewerTo}
                 scrollToHighlightFromHash={scrollToHighlightFromHash}
-                />
-            </>
-          ) : (
-            <p>No PDF to display</p>
-          )}
+              />
 
-          {pdfLoading && (
-            <div className="w-full flex items-center justify-center">
-              <Spinner />
-            </div>
+              {/* Display the search results */}
+              {searchResults.length > 0 && (
+                <div className="mt-6">
+                  <h3 className="text-xl font-semibold">Image Search Results:</h3>
+                  <ul className="list-disc pl-5">
+                    {searchResults.map((result, index) => (
+                      <li key={index}>
+                        Image {result.imageIndex} - Similarity: {result.similarity.toFixed(4)}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+            </>
           )}
         </div>
       </div>
