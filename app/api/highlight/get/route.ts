@@ -26,7 +26,11 @@ async function handleRequest(req: Request): Promise<Response> {
     return new Response(
       JSON.stringify({
         error: "Internal Server Error",
+<<<<<<< HEAD
         details: (error as Error).message,
+=======
+        details: error.message,
+>>>>>>> upstream/main
       }),
       {
         status: 500,
