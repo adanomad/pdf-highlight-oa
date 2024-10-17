@@ -438,28 +438,3 @@ const readFileData = (file: File) => {
   });
 };
 
-<<<<<<< HEAD
-=======
-export const convertPdfToImages = async (file: File) => {
-  const data = await readFileData(file);
-  if (!data) {
-    return [];
-  }
-  const images: string[] = [];
-  const pdf = await pdfjs.getDocument(data).promise;
-  const canvas = document.createElement("canvas");
-  for (let i = 0; i < pdf.numPages; i++) {
-    const page = await pdf.getPage(i + 1);
-    const viewport = page.getViewport({ scale: 1 });
-    const context = canvas.getContext("2d");
-    if (context) {
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-      images.push(canvas.toDataURL());
-    }
-  }
-  canvas.remove();
-  return images;
-};
->>>>>>> upstream/main

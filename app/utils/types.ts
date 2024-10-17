@@ -17,8 +17,4 @@ export interface StoredHighlight {
 export enum StorageMethod {
   supabase = "supabase",
   sqlite = "sqlite",
-<<<<<<< HEAD
 }
-=======
-}
->>>>>>> upstream/main

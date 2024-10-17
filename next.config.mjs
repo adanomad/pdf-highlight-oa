@@ -30,19 +30,11 @@ const nextConfig = {
 
     return config;
   },
-<<<<<<< HEAD
 
   // Environment variables (you can add more if needed)
   env: {
     NEXT_PUBLIC_AUTH_ENABLED: process.env.AUTH_ENABLED || "false",
   },
-=======
-  env: {
-    NEXT_PUBLIC_AUTH_ENABLED: process.env.AUTH_ENABLED || "false",
-  },
-
-  // Other Next.js configurations can be added here
->>>>>>> upstream/main
 };
 
 export default nextConfig;

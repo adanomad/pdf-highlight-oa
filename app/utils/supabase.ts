@@ -93,7 +93,6 @@ export const importFromJson = async (pdfId: string, filePath: string) => {
   });
   return null;
 };
-<<<<<<< HEAD
 
 // OA: Implementing method that uploads PDF to a supabase storage bucket
 /**
@@ -159,5 +158,3 @@ export const deleteDocumentFromSupabase = async (filename: string) => {
     throw new Error(`Failed to delete document: ${error.message}`);
   }
 };
-=======
->>>>>>> upstream/main

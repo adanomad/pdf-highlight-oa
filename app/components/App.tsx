@@ -6,11 +6,7 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-<<<<<<< HEAD
 import { convertPdfToImages, searchPdf, searchImages } from "../utils/pdfUtils";
-=======
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
->>>>>>> upstream/main
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
 import { StoredHighlight, StorageMethod } from "../utils/types";
@@ -22,12 +18,9 @@ import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import { storageMethod } from "../utils/env";
-<<<<<<< HEAD
 
 import DocumentSidebar from "./DocumentSidebar";
 import { extractImagesFromPdf } from "../utils/pdfUtils";
-=======
->>>>>>> upstream/main
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
@@ -47,7 +40,6 @@ export default function App() {
     setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
 
-<<<<<<< HEAD
   // NEW (sets the document list triggers when documents are updated)
   const [documents, setDocuments] = useState<Array<{ id: string; name: string; url: string }>>([]);
   const [images, setImages] = useState<Array<any>>([]);
@@ -150,62 +142,6 @@ export default function App() {
   
 
   useEffect(() => {
-=======
-  const handleFileUpload = async (file: File) => {
-    setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
-
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
-    }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
-  };
-
-  useEffect(() => {
->>>>>>> upstream/main
     const getHighlights = async () => {
       if (!pdfName) {
         return;
@@ -303,18 +239,6 @@ export default function App() {
         newHighlights = await searchImages(keywords, pdfUrl, currentZoom);
       }
 
-<<<<<<< HEAD
-=======
-      let newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
-      if (newHighlights.length === 0 && pdfOcrUrl) {
-        // Try searching the OCR pdf
-        // This step is sometimes required due to the OCR process
-        //   possibly being lossy (pdf -> png -> pdf)
-        //   which means some words are missing/malformed
-        newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
-      }
-
->>>>>>> upstream/main
       console.log("newHighlights:", JSON.stringify(newHighlights, null, 2));
 
       const updatedHighlights = [...highlights, ...newHighlights];
@@ -330,10 +254,6 @@ export default function App() {
                 highlights: storedHighlights,
               }
             : storedHighlights;
-<<<<<<< HEAD
-
-=======
->>>>>>> upstream/main
         await fetch("/api/highlight/update", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -379,7 +299,6 @@ export default function App() {
   }, [scrollToHighlightFromHash]);
 
   return (
-<<<<<<< HEAD
     <div className="relative min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)] text-black">
     {/* Main Content Area */}
     <div className="flex-1 pr-64"> {/* Add padding-right to avoid content overlap */}
@@ -431,57 +350,6 @@ export default function App() {
             scrollToHighlightFromHash={scrollToHighlightFromHash}
           />
         )}
-=======
-    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
-      <div className="flex-1">
-        <div className="mb-8 sticky top-0">
-          <Header />
-        </div>
-
-        <div className="max-w-4xl mx-auto space-y-6 mb-8">
-          <div className="max-w-xl mx-auto space-y-6">
-            <PdfUploader
-              onFileUpload={handleFileUpload}
-              pdfUploaded={pdfUploaded}
-            />
-            {
-              /* session.status === "authenticated" &&  */ pdfId && (
-                <HighlightUploader
-                  onFileUpload={handleHighlightUpload}
-                  highlights={highlights}
-                  pdfId={pdfId}
-                />
-              )
-            }
-            {pdfUrl && (
-              <KeywordSearch
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                handleSearch={handleSearch}
-                resetHighlights={resetHighlights}
-              />
-            )}
-          </div>
-          {loading ? (
-            <div className="w-full flex items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <PdfViewer
-              pdfUrl={pdfUrl}
-              pdfName={pdfName}
-              pdfId={pdfId}
-              highlights={highlights}
-              setHighlights={setHighlights}
-              highlightsKey={highlightsKey}
-              pdfViewerRef={pdfViewerRef}
-              resetHash={resetHash}
-              scrollViewerTo={scrollViewerTo}
-              scrollToHighlightFromHash={scrollToHighlightFromHash}
-            />
-          )}
-        </div>
->>>>>>> upstream/main
       </div>
     </div>
   
