@@ -1,6 +1,13 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
+import { computeTextEmbedding, computeImageEmbedding, cosineSimilarity } from "./openclip";
+
+
+pdfjs.GlobalWorkerOptions.workerSrc = new URL(
+  "pdfjs-dist/build/pdf.worker.min.mjs",
+  import.meta.url,
+).toString();
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -186,6 +193,226 @@ const processLine = (
   });
 };
 
+
+// Function to search for images within the PDF based on the provided keywords
+export const searchImages = async (
+  keywords: string[],
+  pdfUrl: string,
+  viewportZoom: number = 1,
+): Promise<IHighlight[]> => {
+  const highlights: IHighlight[] = [];
+
+  try {
+    // Compute embeddings for the search keywords
+    const keywordEmbeddingsPromises = keywords.map((keyword) =>
+      computeTextEmbedding(keyword)
+    );
+    const keywordEmbeddings = await Promise.all(keywordEmbeddingsPromises);
+
+    // Extract images from the PDF
+    const extractedImages = await extractImagesFromPdf(pdfUrl);
+
+    // Iterate through each extracted image
+    for (const imageInfo of extractedImages) {
+      const { image, x, y, width, height, pageNumber } = imageInfo;
+
+      const pdf = await pdfjs.getDocument(pdfUrl).promise;
+      const page = await pdf.getPage(pageNumber);
+      const viewport = page.getViewport({ scale: viewportZoom });
+
+      const adjustedViewport = {
+        ...viewport,
+        convertToViewportPoint: (x: number, y: number) => {
+          const [vx, vy] = viewport.convertToViewportPoint(x, y);
+          return [vx, viewport.height - vy];
+        },
+      };
+
+      // Compute the embedding for the extracted image using MobileNet
+      const imageEmbedding = await computeImageEmbedding(image);
+
+      // Compare the image embedding with each keyword embedding
+      let bestMatch = -Infinity;
+      for (const keywordEmbedding of keywordEmbeddings) {
+        if (imageEmbedding && keywordEmbedding) {
+          const similarityScore = cosineSimilarity(imageEmbedding, keywordEmbedding);
+          console.log(similarityScore)
+          if (similarityScore > bestMatch) {
+            bestMatch = similarityScore;
+          }
+        }
+      }
+
+      // If the best match exceeds a certain threshold, consider it a match
+      const threshold = 0.25;
+      if (bestMatch >= threshold) {
+        const tx1 = x;
+        const ty1 = y - height;
+        const tx2 = x + width;
+        const ty2 = y;
+
+        highlights.push({
+          content: { text: keywords[0] },
+          position: {
+            boundingRect: {
+              x1: tx1,
+              y1: ty1,
+              x2: tx2,
+              y2: ty2,
+              width: adjustedViewport.width,
+              height: adjustedViewport.height,
+              pageNumber,
+            },
+            rects: [
+              {
+                x1: tx1,
+                y1: ty1,
+                x2: tx2,
+                y2: ty2,
+                width: adjustedViewport.width,
+                height: adjustedViewport.height,
+                pageNumber,
+              },
+            ],
+            pageNumber,
+          },
+          comment: { text: `Matched an image`, emoji: "🖼️" },
+          id: getNextId(),
+        });
+      }
+    }
+  } catch (error) {
+    console.error("Error searching images:", error);
+  }
+
+  return highlights;
+};
+
+
+// Function to handle ImageBitmap objects in PDF.js
+export async function extractImagesFromPdf(pdfUrl: string) {
+  if (!pdfjs.GlobalWorkerOptions.workerSrc) {
+    pdfjs.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjs.version}/pdf.worker.min.js`;
+  }
+
+  const pdfDocument = await pdfjs.getDocument(pdfUrl).promise;
+
+  const images: Array<{ pageNumber: number; image: any; x: number; y: number; width: number; height: number }> = [];
+
+  for (let pageNum = 1; pageNum <= pdfDocument.numPages; pageNum++) {
+    const page = await pdfDocument.getPage(pageNum);
+    const ops = await page.getOperatorList();
+    
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      if (ops.fnArray[i] === pdfjs.OPS.paintImageXObject) {
+        const imageName = ops.argsArray[i][0];
+        
+        try {
+          // Wait for the image to be fully resolved
+          const imageBitmap = await new Promise<ImageBitmap>((resolve, reject) => {
+            page.objs.get(imageName, (bitmap: ImageBitmap) => {
+              if (bitmap) resolve(bitmap);
+              else reject(new Error(`Failed to resolve image ${imageName}`));
+            });
+          });
+
+          // If the imageBitmap is valid, convert it to base64 using a canvas
+          const base64Image = await convertImageBitmapToBase64(imageBitmap);
+
+          let { width, height } = imageBitmap;
+          let x = 0, y = 0;
+
+          // Check if there's a transform property
+          if (typeof imageBitmap === 'object' && imageBitmap !== null && 'transform' in imageBitmap && Array.isArray(imageBitmap.transform)) {
+            [x, y] = imageBitmap.transform.slice(4, 6);
+          } else {
+            // If no transform, try to get position from the previous "cm" operator
+            for (let j = i - 1; j >= 0; j--) {
+              if (ops.fnArray[j] === pdfjs.OPS.transform) {
+                const transform = ops.argsArray[j];
+                x = transform[4] || 0;
+                y = transform[5] || 0;
+                break;
+              }
+            }
+          }
+
+          // Push the raw image data without any transformations
+          images.push({
+            pageNumber: pageNum,
+            image: base64Image, // Base64 representation of the image
+            x,                  // Raw x-coordinate
+            y,                  // Raw y-coordinate
+            width,              // Raw width
+            height,             // Raw height
+          });
+        } catch (error) {
+          console.error(`Failed to process image ${imageName} on page ${pageNum}:`, error);
+        }
+      }
+    }
+  }
+  console.log(images);
+  return images;
+}
+
+
+export const convertImageBitmapToBase64 = async (imageObject: any): Promise<string> => {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  // If imageObject is not an ImageBitmap, convert it to one
+  let imageBitmap: ImageBitmap;
+
+  if (imageObject instanceof ImageBitmap) {
+    imageBitmap = imageObject; // If it's already an ImageBitmap, use it
+  } else if (imageObject.bitmap) {
+    // If the object has a bitmap property, use that
+    imageBitmap = imageObject.bitmap;
+  } else {
+    // If it's not an ImageBitmap, attempt to convert it to one
+    try {
+      imageBitmap = await createImageBitmap(imageObject);
+    } catch (error) {
+      console.error("Error creating ImageBitmap:", error);
+      throw new Error("Unable to convert object to ImageBitmap");
+    }
+  }
+
+  // Set canvas dimensions based on the ImageBitmap
+  canvas.width = imageBitmap.width;
+  canvas.height = imageBitmap.height;
+
+  // Draw the ImageBitmap onto the canvas
+  ctx?.drawImage(imageBitmap, 0, 0);
+
+  // Convert the canvas to a base64 string
+  return canvas.toDataURL("image/png");
+};
+
+export const convertPdfToImages = async (file: File) => {
+  const data = await readFileData(file);
+  if (!data) {
+    return [];
+  }
+  const images: string[] = [];
+  const pdf = await pdfjs.getDocument(data).promise;
+  const canvas = document.createElement("canvas");
+  for (let i = 0; i < pdf.numPages; i++) {
+    const page = await pdf.getPage(i + 1);
+    const viewport = page.getViewport({ scale: 1 });
+    const context = canvas.getContext("2d");
+    if (context) {
+      canvas.height = viewport.height;
+      canvas.width = viewport.width;
+      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      images.push(canvas.toDataURL());
+    }
+  }
+  canvas.remove();
+  return images;
+};
+
 /**
  * Generates a unique ID for highlights
  * @returns A string representing a unique ID
@@ -211,25 +438,3 @@ const readFileData = (file: File) => {
   });
 };
 
-export const convertPdfToImages = async (file: File) => {
-  const data = await readFileData(file);
-  if (!data) {
-    return [];
-  }
-  const images: string[] = [];
-  const pdf = await pdfjs.getDocument(data).promise;
-  const canvas = document.createElement("canvas");
-  for (let i = 0; i < pdf.numPages; i++) {
-    const page = await pdf.getPage(i + 1);
-    const viewport = page.getViewport({ scale: 1 });
-    const context = canvas.getContext("2d");
-    if (context) {
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-      images.push(canvas.toDataURL());
-    }
-  }
-  canvas.remove();
-  return images;
-};

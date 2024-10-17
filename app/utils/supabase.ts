@@ -93,3 +93,68 @@ export const importFromJson = async (pdfId: string, filePath: string) => {
   });
   return null;
 };
+
+// OA: Implementing method that uploads PDF to a supabase storage bucket
+/**
+ * Uploads a PDF file to Supabase Storage.
+ * @param file - The PDF file to upload.
+ * @returns The public URL of the uploaded file.
+ */
+export const uploadToSupabase = async (file: File): Promise<string | null> => {
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+  const fileName = `pdf/${file.name}`;
+  const { error } = await supabaseClient.storage
+    .from('pdf_bucket')
+    .upload(fileName, file, {
+      cacheControl: '0',
+      upsert: true 
+    });
+  if (error) {
+    console.error("Error uploading PDF to Supabase: ", error.message)
+    return null;
+  }
+
+  const { data: publicUrlData } = supabaseClient.storage
+    .from('pdf_bucket')
+    .getPublicUrl(fileName);
+
+  return publicUrlData.publicUrl;
+}
+
+// OA: Challenge 2; Gets all docs from Supabase
+export const getDocumentsFromSupabase = async () => {
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabaseClient.storage
+    .from('pdf_bucket')
+    .list('pdf', {
+      limit: 100,
+    });
+  
+  if (error) {
+    console.error("Error fetching documents:", error.message);
+    return [];
+  }
+  // Filter out '.emptyFolderPlaceholder file'
+  const filteredData = data.filter((file) => file.name !== ".emptyFolderPlaceholder");
+  
+  return filteredData.map((file) => ({
+    id: file.name,
+    name: file.name,
+    url: `${supabaseUrl}/storage/v1/object/public/pdf_bucket/pdf/${file.name}`,
+  }));
+
+}
+
+// OA: added delete functionality
+export const deleteDocumentFromSupabase = async (filename: string) => {
+  const supabaseClient = createClient(supabaseUrl, supabaseKey);
+
+  const { data, error } = await supabaseClient.storage
+    .from("pdf_bucket")
+    .remove([`pdf/${filename}`]);
+
+  if (error) {
+    throw new Error(`Failed to delete document: ${error.message}`);
+  }
+};

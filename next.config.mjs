@@ -19,13 +19,22 @@ const nextConfig = {
       };
     }
 
+    // Ensure that certain Node.js modules are only available on the server side
+    if (!isServer) {
+      config.externals = {
+        ...config.externals,
+        'sharp': 'commonjs sharp',
+        'onnxruntime-node': 'commonjs onnxruntime-node',
+      };
+    }
+
     return config;
   },
+
+  // Environment variables (you can add more if needed)
   env: {
     NEXT_PUBLIC_AUTH_ENABLED: process.env.AUTH_ENABLED || "false",
   },
-
-  // Other Next.js configurations can be added here
 };
 
 export default nextConfig;
