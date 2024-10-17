@@ -90,9 +90,9 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     );
   }
   return (
-    <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
+    <div className="bg-white shadow-lg rounded-lg h-[calc(90vh-16rem)] flex flex-row gap-2 justify-center mb-10%">
       <div
-        className={`${sidebarIsOpen ? "basis-[20%]" : "basis-[0%]"} hidden md:block`}
+        className={`${sidebarIsOpen ? "w-64" : "w-0"} hidden md:block`}
       >
         {pdfName && pdfId && (
           <Sidebar
