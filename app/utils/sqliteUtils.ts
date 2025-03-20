@@ -1,4 +1,4 @@
-// app/utils/sqliteUtils.ts
+// pdf-highlight-oa/app/utils/sqliteUtils.ts
 
 import sqlite3 from "sqlite3";
 import path from "path";

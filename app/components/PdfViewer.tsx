@@ -1,4 +1,4 @@
-// app/components/PdfViewer.tsx
+// pdf-highlight-oa/app/components/PdfViewer.tsx
 import React, { useState } from "react";
 import {
   AreaHighlight,

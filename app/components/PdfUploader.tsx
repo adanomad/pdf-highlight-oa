@@ -1,4 +1,4 @@
-// app/components/PdfUploader.tsx
+// pdf-highlight-oa/app/components/PdfUploader.tsx
 import React from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";

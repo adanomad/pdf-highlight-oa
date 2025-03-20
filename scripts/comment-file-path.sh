@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# scripts/comment-file-path.sh
+# pdf-highlight-oa/scripts/comment-file-path.sh
 
 show_help() {
     echo "Usage: add_file_comments [OPTIONS] [FOLDER]"

@@ -1,4 +1,4 @@
-// app/components/Spinner.tsx
+// pdf-highlight-oa/app/components/Spinner.tsx
 import React from "react";
 
 const Spinner: React.FC = () => (

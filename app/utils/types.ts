@@ -1,4 +1,4 @@
-// app/utils/types.ts
+// pdf-highlight-oa/app/utils/types.ts
 export interface StoredHighlight {
   id: string;
   pdfId: string;

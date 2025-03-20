@@ -1,4 +1,4 @@
-// app/components/Header.tsx
+// pdf-highlight-oa/app/components/Header.tsx
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 
@@ -9,8 +9,8 @@ const Header: React.FC<HeaderProps> = ({}: HeaderProps) => {
   return (
     <div className="w-full bg-white shadow-md p-4 flex items-center justify-center md:flow-root">
       <div className="float-left h-full">
-        <h1 className="text-2xl font-bold underline underline-offset-8">
-          Adanomad Challenge
+        <h1 className="text-2xl font-bold  offset-8">
+          Adanomad
         </h1>
       </div>
       {/*<div className="float-right space-x-2">

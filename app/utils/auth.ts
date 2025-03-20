@@ -1,4 +1,4 @@
-// app/utils/auth.ts
+// pdf-highlight-oa/app/utils/auth.ts
 import NextAuth from "next-auth";
 import GoogleProvider from "next-auth/providers/google";
 import { googleClientId, googleClientSecret } from "./env";

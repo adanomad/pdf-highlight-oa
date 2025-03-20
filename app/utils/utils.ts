@@ -1,4 +1,4 @@
-// app/utils/utils.ts
+// pdf-highlight-oa/app/utils/utils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import { StoredHighlight } from "./types";
 

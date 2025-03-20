@@ -1,4 +1,4 @@
-// app/api/index/route.ts
+// pdf-highlight-oa/app/api/index/route.ts
 import { storageMethod } from "../../utils/env";
 import HighlightStorage from "../../utils/highlightStorage";
 import { StorageMethod } from "../../utils/types";

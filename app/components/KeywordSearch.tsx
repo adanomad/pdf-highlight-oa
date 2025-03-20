@@ -1,4 +1,4 @@
-// app/components/KeywordSearch.tsx
+// pdf-highlight-oa/app/components/KeywordSearch.tsx
 import React from "react";
 import { Button } from "./Button";
 import { Input } from "./Input";

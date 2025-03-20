@@ -1,4 +1,4 @@
-// tailwind.config.ts
+// pdf-highlight-oa/tailwind.config.ts
 import type { Config } from "tailwindcss";
 
 const config: Config = {

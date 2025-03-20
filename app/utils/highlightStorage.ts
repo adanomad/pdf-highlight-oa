@@ -1,4 +1,4 @@
-// app/utils/highlightStorage.ts
+// pdf-highlight-oa/app/utils/highlightStorage.ts
 // Bonus challenge.
 
 import { StoredHighlight } from "./types";

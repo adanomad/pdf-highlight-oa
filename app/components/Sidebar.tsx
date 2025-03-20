@@ -1,4 +1,4 @@
-// app/components/Sidebar.tsx
+// pdf-highlight-oa/app/components/Sidebar.tsx
 import {
   AreaHighlight,
   Highlight,

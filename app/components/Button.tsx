@@ -1,4 +1,4 @@
-// app/components/Button.tsx
+// pdf-highlight-oa/app/components/Button.tsx
 import React from "react";
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {

@@ -1,4 +1,4 @@
-// app/utils/supabase.ts
+// pdf-highlight-oa/app/utils/supabase.ts
 import { createClient } from "@supabase/supabase-js";
 import { supabaseKey, supabaseUrl } from "./env";
 import { StoredHighlight } from "./types";

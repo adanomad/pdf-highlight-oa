@@ -1,4 +1,4 @@
-// app/components/HighlightPopup.tsx
+// pdf-highlight-oa/app/components/HighlightPopup.tsx
 import React from "react";
 
 interface HighlightPopupProps {

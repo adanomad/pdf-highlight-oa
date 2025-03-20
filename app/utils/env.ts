@@ -1,4 +1,4 @@
-// app/utils/env.ts
+// pdf-highlight-oa/app/utils/env.ts
 export const supabaseUrl = process.env.SUPABASE_URL as string;
 export const supabaseKey = process.env.SUPABASE_ANON_KEY as string;
 export const googleClientId = process.env.GOOGLE_CLIENT_ID as string;
