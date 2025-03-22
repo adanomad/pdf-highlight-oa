@@ -5,11 +5,13 @@
     "private": true,
     "devDependencies": {
         "@types/bun": "latest",
-        "@types/express": "^5.0.0",
+        "@types/express": "^5.0.1",
         "@types/multer": "^1.4.12",
         "@types/pdf-parse": "^1.1.4",
         "@types/socket.io": "^3.0.2",
-        "ts-node-dev": "^2.0.0"
+        "ts-node-dev": "^2.0.0",
+        "tsx": "^4.19.3",
+        "typescript": "^5.8.2"
     },
     "scripts": {
         "dev": "npx tsx ./index.ts"
@@ -18,12 +20,14 @@
         "typescript": "^5"
     },
     "dependencies": {
+        "cors": "^2.8.5",
         "dotenv": "^16.4.7",
         "express": "^4.21.2",
         "http": "^0.0.1-security",
         "multer": "^1.4.5-lts.1",
         "openai": "^4.87.3",
         "pdf-parse": "^1.1.1",
+        "pdfjs-dist": "^5.0.375",
         "socket.io": "^4.8.1"
     }
 }

@@ -101,6 +101,14 @@ export function ChatWindow() {
                                     : messages
                             }
                         />
+                        {messages.length === 0 && (
+                            <div className="p-5 text-center">
+                                <p className="text-xl">
+                                    pdf has been uploaded and processed, ask it
+                                    a question!
+                                </p>
+                            </div>
+                        )}
                     </div>
                 </div>
 
