@@ -2,11 +2,6 @@
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
 
-pdfjs.GlobalWorkerOptions.workerSrc = new URL(
-  "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
-).toString();
-
 // TODO: Consider using a library like 'google-ocr' for more accurate text recognition
 // and cases where text is not embedded in the pdf itself (e.g. scanned document)
 

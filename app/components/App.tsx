@@ -18,6 +18,7 @@ import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import { storageMethod } from "../utils/env";
+import ChatInterface from "./ChatInterface";
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
@@ -31,6 +32,7 @@ export default function App() {
   const [highlightsKey, setHighlightsKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
+  const [showChat, setShowChat] = useState(false);
   // const session = useSession();
 
   useEffect(() => {
@@ -245,14 +247,15 @@ export default function App() {
   }, [scrollToHighlightFromHash]);
 
   return (
-    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
-      <div className="flex-1">
-        <div className="mb-8 sticky top-0">
-          <Header />
-        </div>
-
-        <div className="max-w-4xl mx-auto space-y-6 mb-8">
-          <div className="max-w-xl mx-auto space-y-6">
+    <div className="flex flex-col h-screen bg-gray-50">
+      <Header 
+        pdfName={pdfName} 
+        showChat={showChat}
+        setShowChat={setShowChat}
+      />
+      <div className="flex flex-1 overflow-hidden">
+        <div className="flex flex-col w-full max-w-screen-2xl mx-auto p-4 gap-4">
+          <div className="flex flex-row gap-4 justify-between">
             <PdfUploader
               onFileUpload={handleFileUpload}
               pdfUploaded={pdfUploaded}
@@ -275,24 +278,42 @@ export default function App() {
               />
             )}
           </div>
-          {loading ? (
-            <div className="w-full flex items-center justify-center">
-              <Spinner />
-            </div>
-          ) : (
-            <PdfViewer
-              pdfUrl={pdfUrl}
-              pdfName={pdfName}
-              pdfId={pdfId}
-              highlights={highlights}
-              setHighlights={setHighlights}
-              highlightsKey={highlightsKey}
-              pdfViewerRef={pdfViewerRef}
-              resetHash={resetHash}
-              scrollViewerTo={scrollViewerTo}
-              scrollToHighlightFromHash={scrollToHighlightFromHash}
-            />
-          )}
+          
+          {/* Main content area with conditional chat sidebar */}
+          <div className="flex flex-1 overflow-hidden gap-4">
+            {loading ? (
+              <div className="w-full flex items-center justify-center">
+                <Spinner />
+              </div>
+            ) : (
+              <>
+                <div className={`flex-1 ${showChat ? 'w-7/12' : 'w-full'}`}>
+                  <PdfViewer
+                    pdfUrl={pdfUrl}
+                    pdfName={pdfName}
+                    pdfId={pdfId}
+                    highlights={highlights}
+                    setHighlights={setHighlights}
+                    highlightsKey={highlightsKey}
+                    pdfViewerRef={pdfViewerRef}
+                    resetHash={resetHash}
+                    scrollViewerTo={scrollViewerTo}
+                    scrollToHighlightFromHash={scrollToHighlightFromHash}
+                  />
+                </div>
+                
+                {showChat && pdfUrl && (
+                  <div className="w-5/12 h-full">
+                    <ChatInterface 
+                      pdfId={pdfId} 
+                      pdfUrl={pdfUrl}
+                      userId="anonymous"
+                    />
+                  </div>
+                )}
+              </>
+            )}
+          </div>
         </div>
       </div>
     </div>

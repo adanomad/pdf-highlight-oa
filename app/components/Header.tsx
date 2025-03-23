@@ -2,28 +2,39 @@
 import Link from "next/link";
 import { useSession } from "next-auth/react";
 
-interface HeaderProps {}
+interface HeaderProps {
+  pdfName: string | null;
+  showChat: boolean;
+  setShowChat: (show: boolean) => void;
+}
 
-const Header: React.FC<HeaderProps> = ({}: HeaderProps) => {
+export const Header: React.FC<HeaderProps> = ({ pdfName, showChat, setShowChat }) => {
   // const session = useSession();
   return (
-    <div className="w-full bg-white shadow-md p-4 flex items-center justify-center md:flow-root">
-      <div className="float-left h-full">
-        <h1 className="text-2xl font-bold underline underline-offset-8">
-          Adanomad Challenge
-        </h1>
-      </div>
-      {/*<div className="float-right space-x-2">
-        <div className="px-4 py-1.5 inline-flex items-center justify-center rounded-md focus:outline-none focus:ring-2 focus:ring-offset-2 bg-blue-500 text-white hover:bg-blue-600">
-           <Link
-            href={`/api/auth/${session.status === "authenticated" ? "signout" : "signin"}`}
-          >
-            {`${session.status === "authenticated" ? "Sign out" : "Sign in with Google"}`}
-          </Link> 
+    <header className="bg-white shadow-sm py-4 px-6">
+      <div className="flex justify-between items-center">
+        <div className="flex items-center space-x-4">
+          <h1 className="text-xl font-bold text-gray-800">PDF Highlighter</h1>
+          {pdfName && (
+            <span className="text-sm text-gray-600 truncate max-w-md">
+              {pdfName}
+            </span>
+          )}
         </div>
-      </div>*/}
-    </div>
+        
+        {pdfName && (
+          <button
+            onClick={() => setShowChat(!showChat)}
+            className={`px-4 py-2 rounded-md font-medium text-sm ${
+              showChat 
+                ? 'bg-gray-200 text-gray-800 hover:bg-gray-300' 
+                : 'bg-blue-500 text-white hover:bg-blue-600'
+            }`}
+          >
+            {showChat ? 'Hide Chat' : 'Chat with PDF'}
+          </button>
+        )}
+      </div>
+    </header>
   );
 };
-
-export { Header };

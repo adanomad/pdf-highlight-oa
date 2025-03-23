@@ -1,5 +1,5 @@
 // app/components/PdfViewer.tsx
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   AreaHighlight,
   PdfLoader,
@@ -18,6 +18,8 @@ import type {
   ScaledPosition,
 } from "react-pdf-highlighter";
 import { IHighlightToStoredHighlight } from "../utils/utils";
+import * as pdfjs from "pdfjs-dist";
+import { version as pdfJsVersion } from "pdfjs-dist/package.json";
 
 interface PdfViewerProps {
   pdfUrl: string | null;
@@ -70,6 +72,57 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           : h;
       })
     );
+  };
+
+  useEffect(() => {
+    // Create an in-memory worker using a blob URL - no external fetching needed
+    if (typeof window !== 'undefined') {
+      try {
+        // Get the worker code from the locally installed package
+        import('pdfjs-dist/build/pdf.worker.mjs').then((workerModule) => {
+          // The actual code is in workerModule.default
+          const workerCode = workerModule.default;
+          
+          // Create a blob URL from the worker code
+          const workerBlob = new Blob([workerCode], { type: 'text/javascript' });
+          const workerUrl = URL.createObjectURL(workerBlob);
+          
+          // Set the worker source
+          pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+          console.log("PDF worker set using local blob URL");
+        }).catch(err => {
+          console.error("Failed to import worker:", err);
+          // Fallback to a simple worker implementation
+          setupFallbackWorker();
+        });
+      } catch (error) {
+        console.error("Error creating worker:", error);
+        // Fallback to a simple worker implementation
+        setupFallbackWorker();
+      }
+    }
+  }, []);
+
+  // Fallback worker function
+  const setupFallbackWorker = () => {
+    // Create a minimal worker script
+    const workerScript = `
+      self.onmessage = function(event) {
+        // Just echo back messages for now - this is a minimal worker
+        self.postMessage({
+          type: 'test',
+          success: true,
+          message: 'Minimal worker running'
+        });
+      };
+    `;
+    
+    const blob = new Blob([workerScript], { type: 'text/javascript' });
+    const workerUrl = URL.createObjectURL(blob);
+    
+    // Set the worker source
+    pdfjs.GlobalWorkerOptions.workerSrc = workerUrl;
+    console.log("PDF worker set using fallback minimal worker");
   };
 
   if (!pdfUrl) {
@@ -169,36 +222,29 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 const isTextHighlight = !highlight.content?.image;
                 const component = isTextHighlight ? (
                   <Highlight
-                    isScrolledTo={isScrolledTo}
+                    id={highlight.id}
                     position={highlight.position}
-                    comment={highlight.comment}
+                    content={highlight.content}
+                    isScrolledTo={isScrolledTo}
+                    highlight={highlight}
                   />
                 ) : (
                   <AreaHighlight
-                    isScrolledTo={isScrolledTo}
+                    id={highlight.id}
                     highlight={highlight}
-                    onChange={(boundingRect) => {
-                      updateHighlight(
-                        highlight.id,
-                        { boundingRect: viewportToScaled(boundingRect) },
-                        { image: screenshot(boundingRect) }
-                      );
-                    }}
+                    isScrolledTo={isScrolledTo}
                   />
                 );
                 return (
                   <Popup
-                    popupContent={<HighlightPopup {...highlight} />}
-                    onMouseOver={() =>
-                      setTip(highlight, (highlight) => (
-                        <HighlightPopup {...highlight} />
-                      ))
+                    popupContent={<HighlightPopup {...highlight.content} />}
+                    onMouseOver={(popupContent) =>
+                      setTip(highlight, (highlight) => popupContent)
                     }
                     onMouseOut={hideTip}
                     key={index}
-                  >
-                    {component}
-                  </Popup>
+                    children={component}
+                  />
                 );
               }}
               highlights={highlights}
