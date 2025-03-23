@@ -6,7 +6,33 @@ import cors from "cors";
 import dotenv from "dotenv";
 import multer from "multer";
 import { getDocument } from "pdfjs-dist";
+import { v4 as uuidv4 } from "uuid";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 dotenv.config();
+
+interface Message {
+    role: "user" | "assistant" | "system" | "context";
+    content: string;
+}
+
+interface Thread {
+    chunks: PdfChunk[];
+    messages: Message[];
+    id: string;
+    title: string;
+}
+
+// json file for prototyping persistence
+const threads: { [key: string]: Thread } = (() => {
+    if (existsSync("./threads.json")) {
+        return JSON.parse(readFileSync("./threads.json").toString());
+    } else {
+        writeFileSync("./threads.json", "{}");
+        return {};
+    }
+})();
+
+console.log(threads);
 
 const app = express();
 
@@ -32,9 +58,7 @@ interface PdfChunk {
     embeddings: number[];
 }
 
-let pdfChunks: PdfChunk[] = [];
-
-function chunkText(text: string, chunkSize = 500, overlap = 50): string[] {
+function chunkText(text: string, chunkSize = 700, overlap = 50): string[] {
     const chunks: string[] = [];
     let start = 0;
     while (start < text.length) {
@@ -74,53 +98,48 @@ async function getEmbedding(text: string): Promise<number[]> {
         model: "text-embedding-3-small",
     });
     const response = await embedding;
-    // console.log(response.data[0]?.embedding);
     return response.data[0]?.embedding!;
-}
-
-// Process uploaded PDF: extract text, chunk it, and compute embeddings.
-async function processPdf(fileBuffer: Buffer) {
-    const data = await getDocumentText(fileBuffer);
-    const chunks = chunkText(data);
-    pdfChunks = []; // reset previous chunks if any
-    for (const chunk of chunks) {
-        try {
-            const embedding = await getEmbedding(chunk);
-            pdfChunks.push({ text: chunk, embeddings: embedding });
-        } catch (error) {
-            console.error("Embedding error:", error);
-        }
-    }
 }
 
 async function processPdfText(text: string) {
     const chunks = chunkText(text);
-    pdfChunks = []; // reset previous chunks if any
     const promises = [];
     let i = 0;
     for (const chunk of chunks) {
         console.log(chunk);
         console.log(i);
         i++;
-        // if (i > 1) break;
+
         try {
             const embeddingPromise = getEmbedding(chunk);
             promises.push(embeddingPromise);
-            // pdfChunks.push({ text: chunk, embeddings: embedding });
-            // console.log(embedding);
         } catch (error) {
             console.error("Embedding error:", error);
         }
     }
 
     const embeddings = await Promise.all(promises);
-    // console.log(embeddings);
-    pdfChunks = chunks.map((chunk, i) => ({
+    const pdfChunks = chunks.map((chunk, i) => ({
         text: chunk,
         embeddings: embeddings[i]!,
     }));
 
-    // console.log(pdfChunks);
+    return pdfChunks;
+}
+
+async function generateTitle(chunkTexts: string[]) {
+    const title = await openai.chat.completions.create({
+        model: "gpt-4o-mini",
+        messages: [
+            {
+                role: "user",
+                content:
+                    "generate a title for this pdf based on it's first few chunks, it should be 5 words max and descriptive, optionally include an emoji\nchunks:\n" +
+                    chunkTexts.slice(0, 4).join("\n"),
+            },
+        ],
+    });
+    return title.choices[0]?.message.content;
 }
 
 const upload = multer();
@@ -132,31 +151,73 @@ app.post("/upload", upload.single("file"), async (req, res, next) => {
     }
 
     try {
-        // Use the file buffer provided by multer
         const text = await getDocumentText(req.file.buffer);
-        await processPdfText(text);
-        // Send extracted text as the response
-        res.json({ text: text });
+        const [newChunks, title] = await Promise.all([
+            processPdfText(text),
+            generateTitle(chunkText(text)),
+        ]);
+
+        if (!title) throw new Error("Failed to generate title");
+        console.log("TITLE:", title);
+
+        const newThread: Thread = {
+            chunks: newChunks,
+            messages: [],
+            id: uuidv4(),
+            title,
+        };
+
+        threads[newThread.id] = newThread;
+        writeFileSync("./threads.json", JSON.stringify(threads));
+
+        res.json({ text: text, threadId: newThread.id });
     } catch (error) {
         next(error);
     }
 });
-// // Endpoint to upload PDF.
-// app.post("/upload-pdf", upload.single("pdf"), async (req, res) => {
-//     if (!req.file) return res.status(400).send("No file uploaded.");
-//     try {
-//         await processPdf(req.file.buffer);
-//         res.send("PDF processed successfully.");
-//     } catch (error) {
-//         console.error(error);
-//         res.status(500).send("Error processing PDF.");
-//     }
-// });
+
+app.get("/thread/:id", (req, res) => {
+    console.log(threads);
+    console.log(req.params.id);
+    const thread = threads[req.params.id];
+    if (!thread) {
+        res.status(404).send("Thread not found");
+        return;
+    }
+    res.json({ messages: thread.messages, title: thread.title, id: thread.id });
+});
+
+app.get("/threads", (req, res) => {
+    res.json(Object.values(threads).map((t) => ({ title: t.title, id: t.id })));
+});
 
 // Socket connection for AI chat.
 io.on("connection", (socket) => {
+    let threadId: string | null = null;
+    socket.on("join_thread", (id: string) => {
+        threadId = id;
+        const thread = threads[id];
+        if (!thread) {
+            socket.emit("thread_error", "Thread not found");
+            return;
+        }
+        console.log("Thread joined:", id);
+        socket.emit("thread_joined", thread.title);
+    });
     console.log("Client connected:", socket.id);
     socket.on("message", async (msg: string) => {
+        const thread = threads[threadId!];
+        if (!thread) {
+            socket.emit("thread_error", {
+                error: "Thread not found",
+            });
+            return;
+        }
+
+        thread.messages.push({ role: "user", content: msg });
+
+        const pdfChunks = thread.chunks;
+
         console.log(msg);
         console.log(pdfChunks.length);
         // If PDF chunks exist, compute query embedding and select top chunks.
@@ -172,12 +233,19 @@ io.on("connection", (socket) => {
                 // Pick top 3 chunks.
                 scoredChunks.sort((a, b) => b.score - a.score);
                 const topChunks = scoredChunks
-                    .slice(0, 3)
-                    .map((c, i) => `${i + 1}. ${c.text}`);
+                    .slice(0, 4)
+                    .map((c, i) => `${c.text}`);
                 topChunks.forEach((c) => console.log(c));
                 topChunks.forEach((c) => socket.emit("context_chunk", c));
 
-                contextText = topChunks.join("\n");
+                contextText = topChunks.join("\n\n\n");
+
+                socket.emit("context", `Context from PDF:\n${contextText}`);
+
+                thread.messages.push({
+                    role: "context",
+                    content: `Context from PDF:\n${contextText}`,
+                });
                 console.log(pdfChunks);
             }
         } catch (error) {
@@ -195,15 +263,10 @@ io.on("connection", (socket) => {
                         : ""
                 }`,
             },
-            ...(contextText
-                ? [
-                      {
-                          role: "system",
-                          content: `Context from PDF:\n${contextText}`,
-                      },
-                  ]
-                : []),
-            { role: "user", content: msg },
+            ...thread.messages.map((m) => ({
+                role: m.role === "context" ? "assistant" : m.role,
+                content: m.content,
+            })),
         ];
 
         socket.emit("start_message");
@@ -214,13 +277,17 @@ io.on("connection", (socket) => {
                 stream: true,
             });
 
+            const tokens = [];
             for await (const chunk of stream) {
                 const text = chunk.choices[0]!.delta?.content;
                 // console.log(text);
                 if (text) {
                     socket.emit("incoming_token", text);
+                    tokens.push(text);
                 }
             }
+            const response = tokens.join("");
+            thread.messages.push({ role: "assistant", content: response });
         } catch (error) {
             console.error("OpenAI error:", error);
             socket.emit("chat response", {
@@ -228,6 +295,7 @@ io.on("connection", (socket) => {
             });
         }
         socket.emit("end_message");
+        writeFileSync("./threads.json", JSON.stringify(threads));
     });
 });
 

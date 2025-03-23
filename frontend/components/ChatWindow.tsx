@@ -1,19 +1,10 @@
 "use client";
-import {
-    ChangeEvent,
-    FC,
-    FormEvent,
-    useState,
-    useRef,
-    useCallback,
-    useEffect,
-} from "react";
+import { FC, useState, useEffect } from "react";
 import type Message from "../types/Message";
 import { Messages } from "./Messages";
 import { MessageInput } from "./MessageInput";
 import { io } from "socket.io-client";
 
-// const socket = new WebSocket("ws://localhost:4000");
 const socket = io("http://localhost:5000");
 
 interface ClientMessage {
@@ -21,7 +12,11 @@ interface ClientMessage {
     content?: string;
 }
 
-export function ChatWindow() {
+interface Props {
+    threadId: string;
+}
+
+export const ChatWindow: FC<Props> = ({ threadId }) => {
     const [messages, setMessages] = useState<Message[]>([]);
 
     const [isGenerating, setIsGenerating] = useState(false);
@@ -31,7 +26,19 @@ export function ChatWindow() {
         console.log("bro");
         socket.on("connect", () => {
             console.log("connected to socket");
+            socket.emit("join_thread", threadId);
         });
+
+        const getThread = async () => {
+            console.log("THREAD ID", threadId);
+            const response = await fetch(
+                `http://localhost:5000/thread/${threadId}`
+            );
+            const data = await response.json();
+            console.log(data);
+            setMessages(data.messages);
+        };
+        getThread();
     }, []);
 
     useEffect(() => {
@@ -55,6 +62,7 @@ export function ChatWindow() {
 
     useEffect(() => {
         console.log(incomingMessage);
+        socket.emit("join_thread", threadId);
     });
 
     useEffect(() => {
@@ -72,11 +80,21 @@ export function ChatWindow() {
             setIncomingMessage((prev) => `${prev}${token}`);
         }
 
+        function handleIncomingContext(context: string) {
+            console.log(context);
+            setMessages((prev) => [
+                ...prev,
+                { role: "context", content: context },
+            ]);
+        }
+
+        socket.on("context", handleIncomingContext);
         socket.on("incoming_token", handleIncomingToken);
         socket.on("start_message", handleStartMessage);
         socket.on("end_message", handleEndMessage);
 
         return () => {
+            socket.off("context", handleIncomingContext);
             socket.off("incoming_token", handleIncomingToken);
             socket.off("start_message", handleStartMessage);
             socket.off("end_message", handleEndMessage);
@@ -139,4 +157,4 @@ export function ChatWindow() {
             </div>
         </div>
     );
-}
+};

@@ -1,5 +1,5 @@
 interface Message {
-    role: "user" | "assistant";
+    role: "user" | "assistant" | "context";
     content: string;
 }
 
