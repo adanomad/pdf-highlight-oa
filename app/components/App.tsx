@@ -258,6 +258,21 @@ export default function App() {
         }
     }, [highlights]);
 
+    const handleContext = async (context: string) => {
+        const escapeRegex = (str: string) =>
+            str.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+
+        console.log("Context:", context);
+        const actualMessage = context.split("\n").slice(1).join("\n");
+        const chunks = actualMessage
+            .split("\n\n\n")
+            .map((chunk) => escapeRegex(chunk));
+        console.log(chunks);
+        const newHighlights = await searchPdf(chunks, pdfUrl!, 1);
+        console.log("new highlights");
+        console.log(newHighlights);
+    };
+
     useEffect(() => {
         window.addEventListener("hashchange", scrollToHighlightFromHash, false);
         return () => {
@@ -320,7 +335,12 @@ export default function App() {
                                     scrollToHighlightFromHash
                                 }
                             />
-                            {threadId && <ChatWindow threadId={threadId} />}
+                            {threadId && (
+                                <ChatWindow
+                                    handleContext={handleContext}
+                                    threadId={threadId}
+                                />
+                            )}
                         </div>
                     )}
                 </div>

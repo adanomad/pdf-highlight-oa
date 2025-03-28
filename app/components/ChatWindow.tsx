@@ -14,9 +14,10 @@ interface ClientMessage {
 
 interface Props {
     threadId: string;
+    handleContext?: (context: string) => void;
 }
 
-export const ChatWindow: FC<Props> = ({ threadId }) => {
+export const ChatWindow: FC<Props> = ({ threadId, handleContext }) => {
     const [messages, setMessages] = useState<Message[]>([]);
 
     const [isGenerating, setIsGenerating] = useState(false);
@@ -82,6 +83,7 @@ export const ChatWindow: FC<Props> = ({ threadId }) => {
 
         function handleIncomingContext(context: string) {
             console.log(context);
+            handleContext?.(context);
             setMessages((prev) => [
                 ...prev,
                 { role: "context", content: context },

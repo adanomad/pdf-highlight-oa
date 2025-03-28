@@ -76,7 +76,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         return (
             <>
                 <div className="text-center font-bold text-md">
-                    Upload your PDF to start highlighting!
+                    Upload your PDF to start Chatting!
                 </div>
                 {/* {session.status !== "authenticated" && (
           <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
