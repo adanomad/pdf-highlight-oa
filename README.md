@@ -47,6 +47,7 @@ This project is a PDF viewer and keyword search application developed as part of
 - `PdfViewer.tsx`: Handles PDF rendering and navigation
 - `KeywordSearch.tsx`: Manages keyword search functionality
 - `HighlightPopup.tsx`: Displays information about highlighted text
+- `ChatSidebar.tsx`: Allows the user to ask Google Gemini questions regarding the PDF
 - `Sidebar.tsx`: Shows search results and navigation options
 - `highlightStorage.ts`: Manages highlight storage operations
 - `sqliteUtils.ts`: Handles SQLite database operations

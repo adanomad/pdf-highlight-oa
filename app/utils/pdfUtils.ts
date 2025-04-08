@@ -92,6 +92,37 @@ export const searchPdf = async (
 };
 
 /**
+ * Extracts all text from a given PDF
+ * @param pdfUrl URL of the PDF to search
+ * @returns Promise resolving to a string containing all the text from the PDF
+ */
+export const extractPdfText = async (pdfUrl: string): Promise<string> => {
+  try {
+    // Load the PDF
+    const pdf = await pdfjs.getDocument(pdfUrl).promise;
+    const numPages = pdf.numPages;
+    let fullText = "";
+
+    // Iterate through each page
+    for (let pageNum = 1; pageNum <= numPages; pageNum++) {
+      const page = await pdf.getPage(pageNum);
+      const textContent = await page.getTextContent();
+      const textItems = textContent.items as any[];
+
+      // Extract and concatenate text
+      const pageText = textItems.map((item) => item.str).join(" ");
+      fullText += `\n\nPage ${pageNum}:\n${pageText}`;
+    }
+
+    return fullText;
+  }
+  catch (error) {
+    console.error("Error extracting PDF text:", error);
+    return "";
+  }
+};
+
+/**
  * Processes a line of text to find and create highlights for matching keywords
  * @param lineItems - Array of text items in the line
  * @param text - Concatenated text of the line

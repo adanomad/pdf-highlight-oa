@@ -6,3 +6,4 @@ export const googleClientSecret = process.env.GOOGLE_CLIENT_SECRET as string;
 export const storageMethod = process.env.STORAGE_METHOD
   ? (process.env.STORAGE_METHOD as "supabase" | "sqlite")
   : "sqlite";
+export const apiKey = process.env.API_KEY;
