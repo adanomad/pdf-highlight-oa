@@ -6,10 +6,10 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToImages, searchPdf, createSearchablePDF } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
-import { StoredHighlight, StorageMethod } from "../utils/types";
+import { StoredHighlight, StorageMethod, StoredEmbedding } from "../utils/types";
 import {
   IHighlightToStoredHighlight,
   StoredHighlightToIHighlight,
@@ -49,17 +49,36 @@ export default function App() {
     //   perform OCR,
     //   convert output back to PDF
     //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
+    const images = await convertPdfToImages(file);
+
+    const base64Pages = images.map((item): string => {return item.split(',')[1]});
+
+    const requests = base64Pages.map(base64 => ({
+      image: { content: base64 },
+      features: [{ type: 'DOCUMENT_TEXT_DETECTION' }]
+    }));
+
+    const fullAnnotations = [];
+
+    // Maximum number of pages per API call is 16
+    const maxPages = 16;
+    for (let i = 0; i < requests.length; i += maxPages) {
+      const googleOcrRes = await fetch("/api/ocr", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ requests: requests.slice(i, Math.min(i + maxPages, requests.length)) }),
+      });
+
+      const body = await googleOcrRes.json();
+
+      for (let j = 0; j < body.responses.length; ++j) {
+        fullAnnotations.push(body.responses[j].fullTextAnnotation);
+      }
+    }
+
+    if (fullAnnotations.length > 0) {
       // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
+      const blob = await createSearchablePDF(base64Pages, fullAnnotations);
       const fileOcrUrl = URL.createObjectURL(blob);
       setPdfOcrUrl(fileOcrUrl);
 

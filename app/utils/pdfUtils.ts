@@ -1,6 +1,7 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
 import * as pdfjs from "pdfjs-dist";
+import { PDFDocument, rgb } from "pdf-lib";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
@@ -233,3 +234,76 @@ export const convertPdfToImages = async (file: File) => {
   canvas.remove();
   return images;
 };
+
+// Iterate through google OCR output text
+function extractWordsFromVision(fullText: any) {
+  const words: { text: string, boundingBox: [number, number][] }[] = [];
+  for (const page of fullText.pages ?? []) {
+    for (const block of page.blocks ?? []) {
+      for (const paragraph of block.paragraphs ?? []) {
+        for (const word of paragraph.words ?? []) {
+          const text = word.symbols.map((s: any) => s.text).join("");
+          const bbox = word.boundingBox.vertices.map((v: any) => [v.x ?? 0, v.y ?? 0]);
+          words.push({ text, boundingBox: bbox as [number, number][] });
+        }
+      }
+    }
+  }
+  return words;
+}
+
+// Generate a pdf with machine readable text based on Google Vision output and original image
+export async function createSearchablePDF(imageBase64: string[], visionOutput: any[]): Promise<Blob> {
+  const pdfDoc = await PDFDocument.create();
+
+  for (let i = 0; i < imageBase64.length; ++i) {
+    // Embed image
+    const binaryString = atob(imageBase64[i]); // decode base64 to binary string
+    const len = binaryString.length;
+    const bytes = new Uint8Array(len);
+
+    for (let j = 0; j < len; j++) {
+      bytes[j] = binaryString.charCodeAt(j);
+    }
+
+    const imageBytes = await bytes.buffer;
+    const png = await pdfDoc.embedPng(imageBytes);
+    const imgDims = png.scale(1);
+
+    const page = pdfDoc.addPage([imgDims.width, imgDims.height]);
+    
+    page.drawImage(png, {
+      x: 0,
+      y: 0,
+      width: imgDims.width,
+      height: imgDims.height
+    });
+
+    // Extract words from vision output
+    let words: { text: string, boundingBox: [number, number][] }[] = [];
+    if (visionOutput[i]) {
+      words = extractWordsFromVision(visionOutput[i]);
+    }
+
+    for (const word of words) {
+      const [x, y] = word.boundingBox[0]; // top-left
+      const height = Math.abs(word.boundingBox[3][1] - word.boundingBox[0][1]) || 12;
+
+      try {
+        page.drawText(word.text, {
+          x,
+          y: imgDims.height - y - height, // PDF-lib uses bottom-left origin
+          size: height,
+          color: rgb(0, 0, 0),
+          opacity: 0 // Set to >0 if you want visible text
+        });
+      } catch (e) {
+        // Set to not fail if it encounters an invalid character
+        console.log("Invalid character encountered: " + e);
+      }
+    }
+  }
+
+  const pdfBytes = await pdfDoc.save();
+  return new Blob([pdfBytes], { type: "application/pdf" });
+}

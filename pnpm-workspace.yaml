@@ -1,0 +1,5 @@
+onlyBuiltDependencies:
+  - bcrypt
+  - canvas
+  - sqlite3
+  - tesseract.js
