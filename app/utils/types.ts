@@ -14,6 +14,14 @@ export interface StoredHighlight {
   keyword: string;
 }
 
+export interface StoredEmbedding {
+  id: string,
+  pdfId: string,
+  pageNum: number,
+  text: string,
+  embedding: number[]
+}
+
 export enum StorageMethod {
   supabase = "supabase",
   sqlite = "sqlite",
