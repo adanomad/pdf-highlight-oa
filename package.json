@@ -18,6 +18,7 @@
     "lucide-react": "^0.436.0",
     "next": "14.2.7",
     "next-auth": "^5.0.0-beta.21",
+    "openai": "^5.8.2",
     "pdfjs-dist": "4.4.168",
     "react": "^18",
     "react-dom": "^18",
@@ -35,7 +36,9 @@
     "eslint-config-next": "14.2.7",
     "postcss": "^8.4.41",
     "prettier": "3.3.3",
+    "supabase": "^2.30.4",
     "tailwindcss": "^3.4.10",
     "typescript": "^5"
-  }
+  },
+  "packageManager": "pnpm@10.11.0+sha512.6540583f41cc5f628eb3d9773ecee802f4f9ef9923cc45b69890fb47991d4b092964694ec3a4f738a420c918a333062c8b925d312f42e4f0c263eb603551f977"
 }
