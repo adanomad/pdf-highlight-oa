@@ -39,16 +39,38 @@ export default function App() {
 
   const handleFileUpload = async (file: File) => {
     setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
     // Creating a searchable PDF:
     // Convert uploaded PDF file to b64 image,
     //   perform OCR,
     //   convert output back to PDF
     //   update file url with new PDF url
+
+    let uploadedPdfId: string | null = null;
+    let filenameFromServer: string | null = null;
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+
+      const res = await fetch("/api/upload", {
+        method: "POST",
+        body: formData,
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        uploadedPdfId = data.id;
+        filenameFromServer = data.filename;
+      } else {
+        console.warn("Backend PDF upload failed, continuing with local fallback...");
+      }
+    } catch (error) {
+      console.error("Error uploading PDF:", error);
+    }
+
+    let fileUrl = URL.createObjectURL(file);
+
+    const pdfId = uploadedPdfId ?? getPdfId(file.name, undefined);
+
     const i = await convertPdfToImages(file);
     const worker = await createWorker("eng");
     const res = await worker.recognize(
@@ -62,6 +84,8 @@ export default function App() {
       const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
       const fileOcrUrl = URL.createObjectURL(blob);
       setPdfOcrUrl(fileOcrUrl);
+          // Future: optionally index OCR results here
+
 
       // Index words
       // const data = res.data.words;

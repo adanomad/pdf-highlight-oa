@@ -3,6 +3,7 @@
 import sqlite3 from "sqlite3";
 import path from "path";
 import { StoredHighlight } from "./types";
+import { open } from "sqlite";
 
 class SQLiteDatabase {
   private db: sqlite3.Database;
@@ -26,7 +27,7 @@ class SQLiteDatabase {
 
   private migrate(): Promise<void> {
     return new Promise((resolve, reject) => {
-      const sql = `
+      const highlightSql = `
         CREATE TABLE IF NOT EXISTS ${this.tableName} (
           id TEXT,
           pdfId TEXT,
@@ -43,14 +44,56 @@ class SQLiteDatabase {
           PRIMARY KEY (id, pdfId)
         )
       `;
-      this.db.run(sql, (err) => {
-        if (err) {
-          console.error("Error creating table:", err.message);
-          reject(err);
-        } else {
-          console.log("Highlights table created or already exists");
-          resolve();
-        }
+  
+      const pdfSql = `
+        CREATE TABLE IF NOT EXISTS pdf_documents (
+          id TEXT PRIMARY KEY,
+          filename TEXT NOT NULL,
+          filesize INTEGER,
+          content BLOB,
+          upload_time TEXT DEFAULT CURRENT_TIMESTAMP
+        )
+      `;
+      const pdfPagesSql = `
+        CREATE TABLE IF NOT EXISTS pdf_pages (
+          id TEXT PRIMARY KEY,
+          pdf_id TEXT NOT NULL,
+          page_number INTEGER NOT NULL,
+          text TEXT,
+          embedding_vector TEXT
+        )
+      `;
+
+      this.db.serialize(() => {
+        this.db.run(highlightSql, (err) => {
+          if (err) {
+            console.error("Error creating highlights table:", err.message);
+            reject(err);
+            return;
+          } else {
+            console.log("Highlights table ready");
+          }
+        });
+  
+        this.db.run(pdfSql, (err) => {
+          if (err) {
+            console.error("Error creating pdf_documents table:", err.message);
+            reject(err);
+          } else {
+            console.log("PDF documents table ready");
+          }
+        });
+
+        this.db.run(pdfPagesSql, (err) => {
+          if (err) {
+            console.error("Error creating pdf_pages table:", err.message);
+            reject(err);
+          } else {
+            console.log("pdf_pages table ready");
+            resolve();
+          }
+        });
+
       });
     });
   }
@@ -105,6 +148,61 @@ class SQLiteDatabase {
       });
     });
   }
+  
+
+  savePDF(
+    fileBuffer: Buffer,
+    pdfId: string,
+    filename: string,
+    filesize: number
+  ): Promise<void> {
+    return new Promise((resolve, reject) => {
+      const sql = `
+        INSERT INTO pdf_documents (id, filename, filesize, content)
+        VALUES (?, ?, ?, ?)
+      `;
+      this.db.run(sql, [pdfId, filename, filesize, fileBuffer], (err) => {
+        if (err) {
+          console.error("Error saving PDF to pdf_documents:", err.message);
+          reject(err);
+        } else {
+          console.log("PDF saved successfully to pdf_documents:", filename);
+          resolve();
+        }
+      });
+    });
+  }
+  
+  async savePdfPage(pageData: {
+    id: string;
+    pdf_id: string;
+    page_number: number;
+    text: string;
+    embedding_vector: number[]; 
+  }): Promise<void> {
+    await this.ensureMigrated();
+    const sql = `
+      INSERT OR REPLACE INTO pdf_pages (id, pdf_id, page_number, text, embedding_vector)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    return new Promise((resolve, reject) => {
+      this.db.run(
+        sql,
+        [
+          pageData.id,
+          pageData.pdf_id,
+          pageData.page_number,
+          pageData.text,
+          JSON.stringify(pageData.embedding_vector), 
+        ],
+        (error) => {
+          if (error) reject(error);
+          else resolve();
+        }
+      );
+    });
+  }
+
 
   async deleteHighlight(pdfId: string, id: string): Promise<void> {
     await this.ensureMigrated();
@@ -116,6 +214,22 @@ class SQLiteDatabase {
       });
     });
   }
+
+  async savePageEmbedding(pdfId: string, pageNumber: number, text: string, embedding: number[]): Promise<void> {
+    await this.ensureMigrated();
+    const id = `${pdfId}-${pageNumber}`;
+    const sql = `
+      INSERT OR REPLACE INTO pdf_pages (id, pdf_id, page_number, text, embedding_vector)
+      VALUES (?, ?, ?, ?, ?)
+    `;
+    return new Promise((resolve, reject) => {
+      this.db.run(sql, [id, pdfId, pageNumber, text, JSON.stringify(embedding)], (err) => {
+        if (err) reject(err);
+        else resolve();
+      });
+    });
+  }
+
 
   async close(): Promise<void> {
     await this.ensureMigrated();
