@@ -18,3 +18,12 @@ export enum StorageMethod {
   supabase = "supabase",
   sqlite = "sqlite",
 }
+
+export interface PdfPageEmbedding {
+  id: string;         
+  pdf_id: string;
+  page_number: number;
+  text: string;
+  embedding_vector: number[];
+}
+

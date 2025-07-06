@@ -60,3 +60,4 @@ export const StoredHighlightToIHighlight = (
     id: storedHighlight.id,
   };
 };
+
