@@ -1,8 +1,15 @@
 // app/utils/supabase.ts
 import { createClient } from "@supabase/supabase-js";
-import { supabaseKey, supabaseUrl } from "./env";
+// import { supabaseKey, supabaseUrl } from "./env";
 import { StoredHighlight } from "./types";
 import fs from "fs";
+
+const supabaseUrl = process.env.SUPABASE_URL!;
+const supabaseKey =
+  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!; // prefer service role
+
+export const supabaseServer = () => createClient(supabaseUrl, supabaseKey);
+
 
 export const saveHighlight = async (highlight: StoredHighlight) => {
   const supabaseClient = createClient(supabaseUrl, supabaseKey);
@@ -55,6 +62,43 @@ export const deleteHighlight = async (id: string) => {
   }
   return null;
 };
+
+// UPLOAD
+export const uploadToSupabase = async (file: File): Promise<string | null> => {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const path = `pdf/${file.name}`;
+  const { error } = await supabase.storage.from("pdf_bucket").upload(path, file, { upsert: true });
+  if (error) {
+    console.error("Supabase upload error:", error.message);
+    return null;
+  }
+  const { data } = supabase.storage.from("pdf_bucket").getPublicUrl(path);
+  return data.publicUrl;
+};
+// LIST
+export const getDocumentsFromSupabase = async () => {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { data, error } = await supabase.storage.from("pdf_bucket").list("pdf", { limit: 100 });
+  if (error) {
+    console.error("Supabase list error:", error.message);
+    return [];
+  }
+  return (data || [])
+    .filter((f) => f.name !== ".emptyFolderPlaceholder")
+    .map((f) => ({
+      id: f.name,
+      name: f.name,
+      url: `${supabaseUrl}/storage/v1/object/public/pdf_bucket/pdf/${f.name}`,
+    }));
+};
+
+// DELETE
+export const deleteDocumentFromSupabase = async (filename: string) => {
+  const supabase = createClient(supabaseUrl, supabaseKey);
+  const { error } = await supabase.storage.from("pdf_bucket").remove([`pdf/${filename}`]);
+  if (error) throw new Error(error.message);
+};
+  
 
 // BONUS CHALLENGE: Implement a method to export highlights to a JSON file
 // async exportToJson(pdfId: string, filePath: string): Promise<void> {
