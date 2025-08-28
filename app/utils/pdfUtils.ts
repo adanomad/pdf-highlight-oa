@@ -1,11 +1,180 @@
 // app/utils/pdfUtils.ts
 import { IHighlight } from "react-pdf-highlighter";
+import { cosineSimilarity, computeTextEmbedding, computeImageEmbedding } from "./openclip";
 import * as pdfjs from "pdfjs-dist";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
   import.meta.url,
 ).toString();
+
+// Normalizes whatever pdf.js gives us to a real ImageBitmap, then to base64
+export const convertImageBitmapToBase64 = async (imageObject: any): Promise<string> => {
+  const canvas = document.createElement("canvas");
+  const ctx = canvas.getContext("2d");
+
+  let imageBitmap: ImageBitmap;
+  if (imageObject instanceof ImageBitmap) {
+    imageBitmap = imageObject;
+  } else if (imageObject?.bitmap instanceof ImageBitmap) {
+    imageBitmap = imageObject.bitmap;
+  } else {
+    try {
+      imageBitmap = await createImageBitmap(imageObject);
+    } catch (error) {
+      console.error("Error creating ImageBitmap:", error);
+      throw new Error("Unable to convert object to ImageBitmap");
+    }
+  }
+
+  canvas.width = imageBitmap.width;
+  canvas.height = imageBitmap.height;
+  ctx?.drawImage(imageBitmap, 0, 0);
+
+  return canvas.toDataURL("image/png");
+};
+
+// Extracts images from a PDF and returns base64 + raw coords/dimensions
+export async function extractImagesFromPdf(pdfUrl: string) {
+  const pdfDocument = await pdfjs.getDocument(pdfUrl).promise;
+  const images: Array<{ pageNumber: number; image: string; x: number; y: number; width: number; height: number }> = [];
+
+  for (let pageNumber = 1; pageNumber <= pdfDocument.numPages; pageNumber++) {
+    const page = await pdfDocument.getPage(pageNumber);
+    const ops = await page.getOperatorList();
+
+    for (let i = 0; i < ops.fnArray.length; i++) {
+      if (ops.fnArray[i] === pdfjs.OPS.paintImageXObject) {
+        const imageName = ops.argsArray[i][0];
+
+        // Resolve to a real ImageBitmap (handles wrapper objects too)
+        const imageBitmap: ImageBitmap = await new Promise((resolve, reject) => {
+          page.objs.get(imageName, async (obj: any) => {
+            try {
+              if (obj instanceof ImageBitmap) return resolve(obj);
+              if (obj?.bitmap instanceof ImageBitmap) return resolve(obj.bitmap);
+              const created = await createImageBitmap(obj);
+              resolve(created);
+            } catch (e) {
+              reject(e);
+            }
+          });
+        });
+
+        const base64 = await convertImageBitmapToBase64(imageBitmap);
+
+        // Default position
+        let x = 0, y = 0;
+
+        // Try to read transform ("cm") right before paint op to get x/y
+        for (let j = i - 1; j >= 0; j--) {
+          if (ops.fnArray[j] === pdfjs.OPS.transform) {
+            const t = ops.argsArray[j];
+            x = t?.[4] ?? 0;
+            y = t?.[5] ?? 0;
+            break;
+          }
+        }
+
+        images.push({
+          pageNumber,
+          image: base64,
+          x,
+          y,
+          width: imageBitmap.width,
+          height: imageBitmap.height,
+        });
+      }
+    }
+  }
+
+  return images;
+}
+
+// Find images in a PDF that semantically match the given keywords using CLIP embeddings
+export const searchImages = async (
+  keywords: string[],
+  pdfUrl: string,
+  viewportZoom: number = 1
+): Promise<IHighlight[]> => {
+  const highlights: IHighlight[] = [];
+
+  // 1) Get CLIP text embeddings for all keywords, once
+  const keywordEmbeddings = await Promise.all(
+    keywords.map((kw) => computeTextEmbedding(kw))
+  );
+
+  // 2) Extract all images from the PDF (as base64 with raw positions)
+  const extracted = await extractImagesFromPdf(pdfUrl);
+
+  // 3) We’ll need a viewport to size the highlight rectangles correctly
+  const pdf = await pdfjs.getDocument(pdfUrl).promise;
+
+  for (const info of extracted) {
+    const { image, x, y, width, height, pageNumber } = info;
+
+    // Get page + viewport for this page
+    const page = await pdf.getPage(pageNumber);
+    const viewport = page.getViewport({ scale: viewportZoom });
+
+    // pdf.js y-origin is bottom-left; most viewers expect top-left. We flip y via convertToViewportPoint.
+    const [vx1, vy1] = viewport.convertToViewportPoint(x, y - height);
+    const [vx2, vy2] = viewport.convertToViewportPoint(x + width, y);
+
+    // 4) CLIP image embedding
+    const imgEmbedding = await computeImageEmbedding(image); // accepts base64 "data:image/png;..."
+
+    // 5) Compare against all keyword embeddings — keep best score
+    let best = -Infinity;
+    for (const kw of keywordEmbeddings) {
+      const score = cosineSimilarity(imgEmbedding, kw);
+      if (score > best) best = score;
+    }
+
+    // 6) Threshold (tune if needed)
+    const THRESHOLD = 0.25;
+    if (best >= THRESHOLD) {
+      // Build a highlight rectangle
+      const tx1 = Math.min(vx1, vx2);
+      const ty1 = Math.min(vy1, vy2);
+      const tx2 = Math.max(vx1, vx2);
+      const ty2 = Math.max(vy1, vy2);
+
+      highlights.push({
+        id: String(Math.random()).slice(2),
+        content: { text: keywords[0] ?? "" },
+        comment: { text: "Matched an image", emoji: "🖼️" },
+        position: {
+          boundingRect: {
+            x1: tx1,
+            y1: ty1,
+            x2: tx2,
+            y2: ty2,
+            width: viewport.width,
+            height: viewport.height,
+            pageNumber,
+          },
+          rects: [
+            {
+              x1: tx1,
+              y1: ty1,
+              x2: tx2,
+              y2: ty2,
+              width: viewport.width,
+              height: viewport.height,
+              pageNumber,
+            },
+          ],
+          pageNumber,
+        },
+      });
+    }
+  }
+
+  return highlights;
+};
+
+
 
 // TODO: Consider using a library like 'google-ocr' for more accurate text recognition
 // and cases where text is not embedded in the pdf itself (e.g. scanned document)

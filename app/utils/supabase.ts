@@ -5,97 +5,107 @@ import { StoredHighlight } from "./types";
 import fs from "fs";
 
 const supabaseUrl = process.env.SUPABASE_URL!;
-const supabaseKey =
-  process.env.SUPABASE_SERVICE_ROLE_KEY ?? process.env.SUPABASE_ANON_KEY!; // prefer service role
+const supabaseAnonKey = process.env.SUPABASE_ANON_KEY!;
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY as string | undefined;
+const supabaseKey = supabaseServiceKey ?? supabaseAnonKey;
 
 export const supabaseServer = () => createClient(supabaseUrl, supabaseKey);
 
+export const supabasePublic = createClient(supabaseUrl, supabaseAnonKey, {
+  auth: { persistSession: false },
+});
+
+export const supabaseAdmin = createClient(supabaseUrl, supabaseServiceKey ?? supabaseAnonKey, {
+  auth: { persistSession: false },
+});
 
 export const saveHighlight = async (highlight: StoredHighlight) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient.from("highlights").insert(highlight);
-  if (error) {
-    throw error;
-  }
+  const { error } = await supabaseAdmin.from("highlights").insert(highlight);
+  if (error) throw error;
   return null;
 };
 
 export const saveBulkHighlights = async (highlights: StoredHighlight[]) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient.from("highlights").upsert(highlights);
-  if (error) {
-    throw error;
-  }
+  const { error } = await supabaseAdmin.from("highlights").upsert(highlights);
+  if (error) throw error;
   return null;
 };
 
 export const getHighlightsForPdf = async (pdfId: string) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabaseClient
+  const { data, error } = await supabaseAdmin
     .from("highlights")
     .select()
     .eq("pdfId", pdfId);
-  if (data && data.length > 0) {
-    return data;
-  }
-  if (error) {
-    throw error;
-  }
-  return null;
+
+  if (error) throw error;
+  return data && data.length > 0 ? data : null;
 };
 
 export const updateHighlight = async (
   id: string,
   updatedData: Partial<StoredHighlight>
 ) => {
+  const { error } = await supabaseAdmin
+    .from("highlights")
+    .update(updatedData)
+    .eq("id", id);
+  if (error) throw error;
   return null;
 };
 
 export const deleteHighlight = async (id: string) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient
+  const { error } = await supabaseAdmin
     .from("highlights")
     .delete()
     .eq("id", id);
-  if (error) {
-    throw error;
-  }
+  if (error) throw error;
   return null;
 };
 
 // UPLOAD
 export const uploadToSupabase = async (file: File): Promise<string | null> => {
-  const supabase = createClient(supabaseUrl, supabaseKey);
   const path = `pdf/${file.name}`;
-  const { error } = await supabase.storage.from("pdf_bucket").upload(path, file, { upsert: true });
+  const { error } = await supabaseAdmin.storage
+    .from("pdf_bucket")
+    .upload(path, file, {
+      upsert: true,
+      cacheControl: "0",
+      contentType: "application/pdf",
+    });
+
   if (error) {
     console.error("Supabase upload error:", error.message);
     return null;
   }
-  const { data } = supabase.storage.from("pdf_bucket").getPublicUrl(path);
+
+  const { data } = supabaseAdmin.storage.from("pdf_bucket").getPublicUrl(path);
   return data.publicUrl;
 };
+
 // LIST
 export const getDocumentsFromSupabase = async () => {
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabase.storage.from("pdf_bucket").list("pdf", { limit: 100 });
+  const { data, error } = await supabaseAdmin.storage
+    .from("pdf_bucket")
+    .list("pdf", { limit: 100 });
+
   if (error) {
     console.error("Supabase list error:", error.message);
     return [];
   }
-  return (data || [])
-    .filter((f) => f.name !== ".emptyFolderPlaceholder")
-    .map((f) => ({
-      id: f.name,
-      name: f.name,
-      url: `${supabaseUrl}/storage/v1/object/public/pdf_bucket/pdf/${f.name}`,
-    }));
+
+  const filtered = (data ?? []).filter((f) => f.name !== ".emptyFolderPlaceholder");
+  return filtered.map((f) => ({
+    id: f.name,
+    name: f.name,
+    url: `${process.env.SUPABASE_URL}/storage/v1/object/public/pdf_bucket/pdf/${f.name}`,
+  }));
 };
 
 // DELETE
 export const deleteDocumentFromSupabase = async (filename: string) => {
-  const supabase = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabase.storage.from("pdf_bucket").remove([`pdf/${filename}`]);
+  const { error } = await supabaseAdmin.storage
+    .from("pdf_bucket")
+    .remove([`pdf/${filename}`]);
   if (error) throw new Error(error.message);
 };
   

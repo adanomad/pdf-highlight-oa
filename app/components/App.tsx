@@ -6,7 +6,7 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToImages, searchPdf, searchImages, extractImagesFromPdf } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
 import { StoredHighlight, StorageMethod } from "../utils/types";
@@ -18,7 +18,6 @@ import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
 import DocuSidebar from "./DocuSideBar";
-import { extractImagesFromPdf, searchImages } from "../utils/pdfImages";
 import { storageMethod } from "../utils/env";
 
 export default function App() {
