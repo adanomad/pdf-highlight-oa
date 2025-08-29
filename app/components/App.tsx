@@ -6,7 +6,7 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf, searchImages, extractImagesFromPdf } from "../utils/pdfUtils";
+import { convertPdfToImages, searchPdf, searchImages, extractImagesFromPdf, getPageTexts } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
 import { StoredHighlight, StorageMethod } from "../utils/types";
@@ -34,6 +34,7 @@ export default function App() {
   const pdfViewerRef = useRef<any>(null);
   const [documents, setDocuments] = useState<Array<{ id: string; name: string; url: string }>>([]);
   const [searchMode, setSearchMode] = useState<"word" | "image">("word");
+
   // const session = useSession();
 
   const loadDocuments = async () => {
@@ -74,7 +75,7 @@ export default function App() {
     const up = await fetch("/api/files/upload", { method: "POST", body: fd });
     const { fileUrl } = await up.json();
 
-    // 2) OCR first page to produce a searchable variant (optional fallback)
+    // 2) OCR first page (optional fallback)
     const imgs = await convertPdfToImages(file);
     const worker = await createWorker("eng");
     const res = await worker.recognize(imgs[0], { pdfTitle: "ocr-out" }, { pdf: true });
@@ -91,14 +92,48 @@ export default function App() {
     setPdfName(file.name);
     setPdfId(file.name);
 
-    // 4) pre-extract images for image search
-    try { await extractImagesFromPdf(fileUrl); } catch {}
+    try {
+      // 4) Build per-page text + images on the client
+      const extracted = await extractImagesFromPdf(fileUrl);
+      const imagesByPage: Record<number, string[]> = {};
+      for (const im of extracted) {
+        (imagesByPage[im.pageNumber] ??= []).push(im.image);
+      }
 
-    // 5) refresh doc list
-    setTimeout(loadDocuments, 500);
+      const pageTexts = await getPageTexts(fileUrl);
 
-    setLoading(false);
+      // 5) Send to the server indexer
+      const ix = await fetch("/api/index/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: file.name,
+          url: fileUrl,
+          pages: pageTexts.map((p) => ({
+            pageNumber: p.pageNumber,
+            text: p.text,
+            images: imagesByPage[p.pageNumber] ?? [],
+          })),
+        }),
+      });
+
+      if (!ix.ok) {
+        const err = await ix.text().catch(() => "");
+        console.error("Indexing failed:", ix.status, err);
+      } else {
+        const j = await ix.json().catch(() => ({}));
+        console.log("Indexing ok:", j);
+      }
+    } catch (e) {
+      console.warn("Indexing step failed:", e);
+    } finally {
+      // 6) refresh doc list & stop spinner
+      setTimeout(loadDocuments, 500);
+      setLoading(false);
+    }
   };
+
+
 
   useEffect(() => {
     const getHighlights = async () => {
@@ -164,8 +199,65 @@ export default function App() {
     setHighlights([]);
   };
 
+  const onJumpToResult = (docId: string, url: string, pageNumber: number) => {
+    const switchDoc = docId !== pdfId;
+    if (switchDoc) {
+      // Load the new PDF first, then jump
+      setPdfUrl(url);
+      setPdfName(documents.find((d) => d.id === docId)?.name ?? null);
+      setPdfId(docId);
+      // Give the viewer a tick to mount, then jump
+      setTimeout(() => goToPage(pageNumber), 250);
+    } else {
+      goToPage(pageNumber);
+    }
+  };
+
+
   const handleSearch = async () => {
-    if (!pdfUrl || !searchTerm.trim()) return;
+    if (!searchTerm.trim()) return;
+
+    // 1) Global search (all docs) — fills sidebar results
+    const kind = searchMode === "image" ? "image" : "text";
+    const r = await fetch(
+      `/api/search?q=${encodeURIComponent(searchTerm)}&kind=${kind}&limit=20`,
+      { cache: "no-store" }
+    );
+    const raw = r.ok ? await r.json() : [];
+
+    // Normalize every row shape we might get back and enrich from `documents`
+    const mapped = (Array.isArray(raw) ? raw : []).map((row: any) => {
+      const document_id =
+        row.document_id ?? row.doc_id ?? row.pdf_id ?? row.file_id ?? row.id ?? "";
+      const page_number =
+        typeof row.page_number === "number"
+          ? row.page_number
+          : typeof row.page === "number"
+          ? row.page
+          : 1;
+      const kind2 = (row.kind as "text" | "image") ?? (kind as "text" | "image");
+      const distance =
+        typeof row.distance === "number"
+          ? row.distance
+          : typeof row.score === "number"
+          ? row.score
+          : typeof row.similarity === "number"
+          ? row.similarity
+          : 0;
+
+      const doc = documents.find((d) => d.id === document_id);
+      return {
+        document_id,
+        document_name: doc?.name ?? document_id,
+        url: doc?.url ?? "",
+        page_number,
+        kind: kind2,
+        distance,
+      };
+    });
+
+    // 2) In-document highlights (only if a PDF is open)
+    if (!pdfUrl) return;
 
     const currentZoom = pdfViewerRef.current?.viewer?.getCurrentScale?.() ?? 1;
     const keywords = searchTerm.split(/\s+/).filter(Boolean);
@@ -186,6 +278,19 @@ export default function App() {
   };
 
 
+  const goToPage = (pageNumber: number) => {
+    const viewer = pdfViewerRef.current?.viewer;
+    if (viewer?.scrollPageIntoView) {
+      try {
+        viewer.scrollPageIntoView({ pageNumber });
+        return;
+      } catch {}
+    }
+    // Fallback if the viewer doesn’t expose scrollPageIntoView:
+    window.location.hash = `#page=${pageNumber}`;
+  };
+
+
   const parseIdFromHash = () => {
     return document.location.hash.slice("#highlight-".length);
   };
@@ -194,11 +299,7 @@ export default function App() {
     document.location.hash = "";
   };
 
-  const scrollViewerTo = useRef((highlight: IHighlight) => {
-    if (pdfViewerRef.current && highlight) {
-      pdfViewerRef.current.scrollTo(highlight);
-    }
-  });
+  const scrollViewerTo = useRef<(h: IHighlight) => void>(() => {});
 
   const scrollToHighlightFromHash = useCallback(() => {
     const highlightId = parseIdFromHash();
@@ -220,7 +321,7 @@ export default function App() {
   }, [scrollToHighlightFromHash]);
 
   return (
-    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
+    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)] text-black">
       <div className="flex-1">
         <div className="mb-8 sticky top-0">
           <Header />
@@ -274,12 +375,13 @@ export default function App() {
         </div>
       </div>
       {/* Floating Sidebar for showing the documents */}
-      <div className="absolute right-0 top-0 h-screen w-80 bg-white border-l border-gray-300 shadow-lg overflow-y-auto">
+      <div className="right-0 top-0 h-screen w-80 bg-white border-l border-gray-300 shadow-lg overflow-y-auto">
         <DocuSidebar
           documents={documents}
           selectedId={pdfId}
           onSelect={onSelectDocument}
           onDelete={onDeleteDocument}
+          onJumpToResult={onJumpToResult}
         />
       </div>
     </div>
