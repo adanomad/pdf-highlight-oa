@@ -1,41 +1,40 @@
-// app/components/PdfUploader.tsx
 import React from "react";
-import { Button } from "./Button";
-import { Input } from "./Input";
-import { Upload } from "lucide-react";
 
-interface PdfUploaderProps {
+type PdfUploaderProps = {
   onFileUpload: (file: File) => void;
   pdfUploaded: boolean;
-}
+};
 
-const PdfUploader: React.FC<PdfUploaderProps> = ({
-  onFileUpload,
-  pdfUploaded,
-}) => {
+export default function PdfUploader({ onFileUpload, pdfUploaded }: PdfUploaderProps) {
+  const inputId = "pdf-upload";
+
   const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
-    if (event.target.files && event.target.files[0]) {
-      onFileUpload(event.target.files[0]);
-    }
+    const files = Array.from(event.target.files ?? []);
+    files.forEach(onFileUpload);
+    // allow selecting the same file again later
+    event.target.value = "";
   };
 
   return (
-    <div className="text-center">
-      <Input
-        type="file"
-        accept=".pdf"
-        onChange={handleFileUpload}
-        className="hidden"
-        id="pdf-upload"
-      />
-      <label htmlFor="pdf-upload">
-        <Button as="span" className="w-full">
-          <Upload className="w-4 h-4 mr-2" />
-          {pdfUploaded ? "PDF Uploaded" : "Upload PDF"}
-        </Button>
-      </label>
+    <div className="border rounded p-3 bg-white">
+      <div className="font-semibold mb-2">Upload PDF{pdfUploaded ? "s" : ""}</div>
+      <div className="flex items-center gap-2">
+        <label
+          htmlFor={inputId}
+          className="cursor-pointer inline-flex items-center justify-center border rounded px-3 py-2 hover:bg-gray-50"
+        >
+          Choose PDF{`(s)`}
+        </label>
+        <input
+          id={inputId}
+          type="file"
+          accept="application/pdf"
+          multiple
+          onChange={handleFileUpload}
+          className="hidden"
+        />
+      </div>
+      <p className="text-sm mt-2">You can select multiple PDFs at once or click again to add more.</p>
     </div>
   );
-};
-
-export default PdfUploader;
+}

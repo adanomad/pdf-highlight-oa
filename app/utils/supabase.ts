@@ -1,95 +1,68 @@
 // app/utils/supabase.ts
+// Server-only: do NOT import this from client components
+
 import { createClient } from "@supabase/supabase-js";
-import { supabaseKey, supabaseUrl } from "./env";
+import { supabaseUrl, supabaseServiceKey } from "./env";
 import { StoredHighlight } from "./types";
-import fs from "fs";
 
-export const saveHighlight = async (highlight: StoredHighlight) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient.from("highlights").insert(highlight);
-  if (error) {
-    throw error;
-  }
-  return null;
+const client = () => createClient(supabaseUrl, supabaseServiceKey);
+
+type DBRow = {
+  id: string;
+  pdf_id: string;
+  data: StoredHighlight; // we store the full app shape here
+  created_at?: string;
+  updated_at?: string;
 };
 
-export const saveBulkHighlights = async (highlights: StoredHighlight[]) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient.from("highlights").upsert(highlights);
-  if (error) {
-    throw error;
-  }
-  return null;
+// Map DB -> app (ensure id/pdfId present even if not in data)
+const fromDB = (r: DBRow): StoredHighlight => {
+  const base = r.data || ({} as StoredHighlight);
+  return {
+    ...base,
+    id: r.id ?? base.id,
+    pdfId: r.pdf_id ?? (base as any).pdfId,
+  };
 };
 
-export const getHighlightsForPdf = async (pdfId: string) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabaseClient
+// Map app -> DB
+const toDB = (h: StoredHighlight): DBRow => ({
+  id: h.id,
+  pdf_id: (h as any).pdfId,
+  data: h,
+});
+
+export async function dbGetHighlightsByPdfId(pdfId: string): Promise<StoredHighlight[]> {
+  const { data, error } = await client()
     .from("highlights")
-    .select()
-    .eq("pdfId", pdfId);
-  if (data && data.length > 0) {
-    return data;
-  }
-  if (error) {
-    throw error;
-  }
-  return null;
-};
+    .select("id,pdf_id,data,created_at,updated_at")
+    .eq("pdf_id", pdfId)
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  return (data as DBRow[] | null)?.map(fromDB) ?? [];
+}
 
-export const updateHighlight = async (
-  id: string,
-  updatedData: Partial<StoredHighlight>
-) => {
-  return null;
-};
+export async function dbReplaceHighlightsForPdfId(
+  pdfId: string,
+  highlights: StoredHighlight[]
+) {
+  const c = client();
+  const { error: delErr } = await c.from("highlights").delete().eq("pdf_id", pdfId);
+  if (delErr) throw delErr;
+  if (!highlights?.length) return true;
 
-export const deleteHighlight = async (id: string) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { error } = await supabaseClient
+  const rows = highlights.map(toDB);
+  const { error: insErr } = await c.from("highlights").insert(rows);
+  if (insErr) throw insErr;
+  return true;
+}
+
+export async function dbUpsertHighlights(highlights: StoredHighlight[]) {
+  if (!highlights?.length) return true;
+  const rows = highlights.map(toDB);
+  const { error } = await client()
     .from("highlights")
-    .delete()
-    .eq("id", id);
-  if (error) {
-    throw error;
-  }
-  return null;
-};
-
-// BONUS CHALLENGE: Implement a method to export highlights to a JSON file
-// async exportToJson(pdfId: string, filePath: string): Promise<void> {
-//   // Retrieve highlights and write to a JSON file
-// }
-export const exportToJson = async (pdfId: string, filePath: string) => {
-  const supabaseClient = createClient(supabaseUrl, supabaseKey);
-  const { data, error } = await supabaseClient
-    .from("highlights")
-    .select()
-    .eq("pdfId", pdfId);
-  if (data && data.length > 0) {
-    fs.writeFile(filePath, JSON.stringify(data), (error) => {
-      if (error) {
-        throw error;
-      }
-    });
-  }
-  if (error) {
-    throw error;
-  }
-  return null;
-};
-
-// BONUS CHALLENGE: Implement a method to import highlights from a JSON file
-// async importFromJson(filePath: string): Promise<void> {
-//   // Read from JSON file and insert highlights into the database
-// }
-export const importFromJson = async (pdfId: string, filePath: string) => {
-  fs.readFile(filePath, "utf-8", (error, data) => {
-    if (error) {
-      throw error;
-    }
-    const highlights = JSON.parse(data);
-    saveBulkHighlights(highlights);
-  });
-  return null;
-};
+    .upsert(rows, { onConflict: "id" });
+  if (error) throw error;
+  return true;
+}

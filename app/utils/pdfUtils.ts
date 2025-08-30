@@ -4,11 +4,32 @@ import * as pdfjs from "pdfjs-dist";
 
 pdfjs.GlobalWorkerOptions.workerSrc = new URL(
   "pdfjs-dist/build/pdf.worker.min.mjs",
-  import.meta.url,
+  import.meta.url
 ).toString();
 
 // TODO: Consider using a library like 'google-ocr' for more accurate text recognition
 // and cases where text is not embedded in the pdf itself (e.g. scanned document)
+
+/**
+ * Extract per-page text from the PDF's existing text layer (no OCR).
+ * Returns an array of { page, text }.
+ */
+export const extractPagesText = async (
+  pdfUrl: string
+): Promise<Array<{ page: number; text: string }>> => {
+  const pdf = await pdfjs.getDocument(pdfUrl as any).promise;
+  const pages: Array<{ page: number; text: string }> = [];
+  for (let p = 1; p <= pdf.numPages; p++) {
+    const page = await pdf.getPage(p);
+    const textContent = await page.getTextContent({ normalizeWhitespace: true });
+    const text = (textContent.items as any[])
+      .map((i) => (i && typeof i.str === "string" ? i.str : ""))
+      .join(" ")
+      .trim();
+    pages.push({ page: p, text });
+  }
+  return pages;
+};
 
 /**
  * Searches a PDF for given keywords and returns highlights
@@ -20,7 +41,7 @@ pdfjs.GlobalWorkerOptions.workerSrc = new URL(
 export const searchPdf = async (
   keywords: string[],
   pdfUrl: string,
-  viewportZoom: number = 1,
+  viewportZoom: number = 1
 ): Promise<IHighlight[]> => {
   const highlights: IHighlight[] = [];
 
@@ -62,7 +83,7 @@ export const searchPdf = async (
             keywords,
             pageNum,
             highlights,
-            adjustedViewport,
+            adjustedViewport
           );
           textLine = "";
           lineItems = [];
@@ -80,7 +101,7 @@ export const searchPdf = async (
           keywords,
           pageNum,
           highlights,
-          adjustedViewport,
+          adjustedViewport
         );
       }
     }
@@ -106,7 +127,7 @@ const processLine = (
   keywords: string[],
   pageNumber: number,
   highlights: IHighlight[],
-  viewport: any,
+  viewport: any
 ) => {
   keywords.forEach((keyword) => {
     // FIXME: This regex might need to be adjusted for more accurate matching
@@ -194,7 +215,9 @@ const getNextId = () => String(Math.random()).slice(2);
 
 export const getPdfId = (pdfName: string, email?: string) =>
   email
-    ? `${pdfName.replace(".", "__")}__${email.replace("@", "__at__").replace(".", "__")}`
+    ? `${pdfName.replace(".", "__")}__${email
+        .replace("@", "__at__")
+        .replace(".", "__")}`
     : pdfName.replace(".", "__");
 
 // https://stackoverflow.com/a/65985452
@@ -217,7 +240,7 @@ export const convertPdfToImages = async (file: File) => {
     return [];
   }
   const images: string[] = [];
-  const pdf = await pdfjs.getDocument(data).promise;
+  const pdf = await pdfjs.getDocument(data as any).promise;
   const canvas = document.createElement("canvas");
   for (let i = 0; i < pdf.numPages; i++) {
     const page = await pdf.getPage(i + 1);
@@ -226,7 +249,7 @@ export const convertPdfToImages = async (file: File) => {
     if (context) {
       canvas.height = viewport.height;
       canvas.width = viewport.width;
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
+      await page.render({ canvasContext: context, viewport }).promise;
       images.push(canvas.toDataURL());
     }
   }

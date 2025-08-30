@@ -1,78 +1,50 @@
 // app/api/highlight/update/route.ts
-
-import HighlightStorage from "../../../utils/highlightStorage";
+import { NextRequest, NextResponse } from "next/server";
 import { storageMethod } from "../../../utils/env";
 import {
-  deleteHighlight as supabaseDeleteHighlight,
-  saveBulkHighlights as supabaseSaveBulkHighlights,
-  saveHighlight as supabaseSaveHighlight,
+  dbReplaceHighlightsForPdfId,
+  dbUpsertHighlights,
 } from "../../../utils/supabase";
-import { StorageMethod, StoredHighlight } from "../../../utils/types";
+import { StoredHighlight } from "../../../utils/types";
 
-async function handleRequest(
-  req: Request,
-  action: (body: any, db?: HighlightStorage) => Promise<void>
-): Promise<Response> {
-  let db: HighlightStorage | undefined;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+/**
+ * Accepts:
+ *  A) { pdfId, highlights: StoredHighlight[] }  -> replace all for pdfId
+ *  B) StoredHighlight[]                         -> upsert by id
+ */
+export async function POST(req: NextRequest) {
   try {
+    if (storageMethod !== "supabase") {
+      // Plug your sqlite path here if needed. For now, no-op.
+      return NextResponse.json({ ok: true });
+    }
+
     const body = await req.json();
-    if (storageMethod === StorageMethod.sqlite) {
-      db = new HighlightStorage();
-    }
-    await action(body, db);
-    return new Response(null, { status: 200 });
-  } catch (error) {
-    console.error(error);
-    return new Response(null, { status: 500 });
-  } finally {
-    if (db) {
-      await db.close();
-    }
-  }
-}
 
-async function saveHighlights(body: any, db?: HighlightStorage): Promise<void> {
-  if (db) {
-    if (Array.isArray(body.highlights)) {
-      await db.saveBulkHighlights(ensureKeywords(body.highlights));
-    } else {
-      await db.saveHighlight(ensureKeyword(body.highlights));
+    // A) replace-all for a pdfId
+    if (body && typeof body === "object" && !Array.isArray(body)) {
+      const { pdfId, highlights } = body as {
+        pdfId: string;
+        highlights: StoredHighlight[];
+      };
+      if (!pdfId || !Array.isArray(highlights)) {
+        return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+      }
+      await dbReplaceHighlightsForPdfId(pdfId, highlights);
+      return NextResponse.json({ ok: true });
     }
-  } else {
+
+    // B) upsert array
     if (Array.isArray(body)) {
-      await supabaseSaveBulkHighlights(ensureKeywords(body));
-    } else {
-      await supabaseSaveHighlight(ensureKeyword(body));
+      await dbUpsertHighlights(body as StoredHighlight[]);
+      return NextResponse.json({ ok: true });
     }
+
+    return NextResponse.json({ error: "Invalid payload" }, { status: 400 });
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Update failed" }, { status: 500 });
   }
-}
-
-async function removeHighlight(
-  body: any,
-  db?: HighlightStorage
-): Promise<void> {
-  if (db) {
-    await db.deleteHighlight(body.pdfId, body.id);
-  } else {
-    await supabaseDeleteHighlight(body);
-  }
-}
-
-function ensureKeyword(highlight: StoredHighlight): StoredHighlight {
-  return {
-    ...highlight,
-    keyword: highlight.keyword || "",
-  };
-}
-
-function ensureKeywords(highlights: StoredHighlight[]): StoredHighlight[] {
-  return highlights.map(ensureKeyword);
-}
-
-export async function POST(req: Request): Promise<Response> {
-  return handleRequest(req, saveHighlights);
-}
-
-export async function DELETE(req: Request): Promise<Response> {
-  return handleRequest(req, removeHighlight);
 }

@@ -1,49 +1,26 @@
 // app/api/highlight/get/route.ts
-import HighlightStorage from "../../../utils/highlightStorage";
+import { NextRequest, NextResponse } from "next/server";
 import { storageMethod } from "../../../utils/env";
-import { StorageMethod } from "../../../utils/types";
-import { getHighlightsForPdf as supabaseGetHighlightsForPdf } from "../../../utils/supabase";
+import { dbGetHighlightsByPdfId } from "../../../utils/supabase";
 
-async function handleRequest(req: Request): Promise<Response> {
-  let db: HighlightStorage | undefined;
+export const runtime = "nodejs";
+export const dynamic = "force-dynamic";
+
+export async function POST(req: NextRequest) {
   try {
-    const body = await req.json();
-    let highlights;
-
-    if (storageMethod === StorageMethod.sqlite) {
-      db = new HighlightStorage();
-      highlights = await db.getHighlightsForPdf(body.pdfId);
-    } else {
-      highlights = await supabaseGetHighlightsForPdf(body.pdfId);
+    const { pdfId } = await req.json();
+    if (!pdfId) {
+      return NextResponse.json({ error: "Missing pdfId" }, { status: 400 });
     }
 
-    return new Response(JSON.stringify(highlights), {
-      status: 200,
-      headers: { "Content-Type": "application/json" },
-    });
-  } catch (error) {
-    console.error("Error in handleRequest:", error);
-    return new Response(
-      JSON.stringify({
-        error: "Internal Server Error",
-        details: error.message,
-      }),
-      {
-        status: 500,
-        headers: { "Content-Type": "application/json" },
-      }
-    );
-  } finally {
-    if (db) {
-      try {
-        await db.close();
-      } catch (closeError) {
-        console.error("Error closing database:", closeError);
-      }
+    if (storageMethod !== "supabase") {
+      // If you still support sqlite elsewhere, wire it here. For now, empty.
+      return NextResponse.json([]);
     }
+
+    const data = await dbGetHighlightsByPdfId(pdfId);
+    return NextResponse.json(data);
+  } catch (e: any) {
+    return NextResponse.json({ error: e?.message || "Failed" }, { status: 500 });
   }
-}
-
-export async function POST(req: Request): Promise<Response> {
-  return handleRequest(req);
 }

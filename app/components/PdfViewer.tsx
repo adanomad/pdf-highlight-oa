@@ -1,5 +1,5 @@
 // app/components/PdfViewer.tsx
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import {
   AreaHighlight,
   PdfLoader,
@@ -23,13 +23,17 @@ interface PdfViewerProps {
   pdfUrl: string | null;
   pdfName: string | null;
   pdfId: string | null;
-  highlights: Array<IHighlight>;
+  highlights: Array<IHighlight>;                 // may include cross-doc synthetic results
   setHighlights: React.Dispatch<React.SetStateAction<Array<IHighlight>>>;
   highlightsKey: number;
   pdfViewerRef: React.RefObject<any>;
   resetHash: () => void;
   scrollViewerTo: React.MutableRefObject<(highlight: IHighlight) => void>;
   scrollToHighlightFromHash: () => void;
+
+  // NEW: for cross-doc search
+  searchMode?: boolean;
+  highlightOwner?: Record<string, string>;       // id -> pdfId
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({
@@ -43,9 +47,17 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   resetHash,
   scrollViewerTo,
   scrollToHighlightFromHash,
+  searchMode = false,
+  highlightOwner = {},
 }) => {
   const [sidebarIsOpen, setSidebarIsOpen] = useState(true);
   // const session = useSession();
+
+  // Only draw overlay marks that belong to the current PDF when in searchMode
+  const overlayHighlights =
+    searchMode && pdfId
+      ? highlights.filter((h) => highlightOwner[(h.id as string) ?? ""] === pdfId)
+      : highlights;
 
   const updateHighlight = (
     highlightId: string,
@@ -78,25 +90,16 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
         <div className="text-center font-bold text-md">
           Upload your PDF to start highlighting!
         </div>
-        {/* {session.status !== "authenticated" && (
-          <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
-            <img
-              src="demo.png"
-              className="rounded-lg object-cover w-full hover:scale-[1.05] transform transition duration-500"
-            />
-          </div>
-        )} */}
       </>
     );
   }
+
   return (
     <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
-      <div
-        className={`${sidebarIsOpen ? "basis-[20%]" : "basis-[0%]"} hidden md:block`}
-      >
+      <div className={`${sidebarIsOpen ? "basis-[20%]" : "basis-[0%]"} hidden md:block`}>
         {pdfName && pdfId && (
           <Sidebar
-            highlights={highlights}
+            highlights={highlights}           // keep full list so Sidebar shows all results
             setHighlights={setHighlights}
             resetHighlights={() => {
               setHighlights([]);
@@ -112,6 +115,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
           />
         )}
       </div>
+
       <div className="w-full h-full relative p-4 overflow-y-auto">
         <PdfLoader
           url={pdfUrl}
@@ -134,17 +138,14 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   <Tip
                     onOpen={transformSelection}
                     onConfirm={(comment) => {
-                      const newHighlight = {
+                      const newHighlight: IHighlight = {
                         content,
                         position,
                         comment,
                         id: Date.now().toString(),
                       };
                       if (pdfName) {
-                        const sh = IHighlightToStoredHighlight(
-                          newHighlight,
-                          pdfName
-                        );
+                        const sh = IHighlightToStoredHighlight(newHighlight, pdfName);
                         fetch("/api/highlight/update", {
                           method: "POST",
                           headers: { "Content-Type": "application/json" },
@@ -190,9 +191,7 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   <Popup
                     popupContent={<HighlightPopup {...highlight} />}
                     onMouseOver={() =>
-                      setTip(highlight, (highlight) => (
-                        <HighlightPopup {...highlight} />
-                      ))
+                      setTip(highlight, (h) => <HighlightPopup {...h} />)
                     }
                     onMouseOut={hideTip}
                     key={index}
@@ -201,10 +200,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                   </Popup>
                 );
               }}
-              highlights={highlights}
+              // ⬇️ IMPORTANT: filter overlay to the current PDF during search
+              highlights={overlayHighlights}
               onScrollChange={resetHash}
               scrollRef={(scrollTo) => {
                 scrollViewerTo.current = scrollTo;
+                // handle hash navigation (App swaps PDFs if needed)
                 scrollToHighlightFromHash();
               }}
             />
