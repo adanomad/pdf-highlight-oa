@@ -34,3 +34,6 @@ next-env.d.ts
 
 # sqlite
 *.db
+
+# flask
+flask/.venv

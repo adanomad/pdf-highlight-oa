@@ -3,25 +3,58 @@ import { storageMethod } from "../../utils/env";
 import HighlightStorage from "../../utils/highlightStorage";
 import { StorageMethod } from "../../utils/types";
 
+import {
+  upsertDocument,
+  ensurePages,
+  getPageId,
+  insertPageEmbedding,
+} from "../../utils/supabase";
+
 export async function POST(req: Request) {
-  let response;
-  let db;
+  let db: HighlightStorage | undefined;
   try {
     const body = await req.json();
-    if (storageMethod === StorageMethod.sqlite) {
+
+    // --- Branch 1: legacy sqlite word index ---
+    if (body?.pdfId && Array.isArray(body?.words) && storageMethod === StorageMethod.sqlite) {
       db = new HighlightStorage(body.pdfId);
       await db.indexWords(body.pdfId, body.words);
-    } else {
-      throw new Error("Index via supabase has not been implemented");
+      return new Response(null, { status: 200 });
     }
-    response = new Response(null, { status: 200 });
+
+    // --- Branch 2: Supabase page-level embeddings ---
+    if (body?.name && body?.url && typeof body?.numPages === 'number' && Array.isArray(body?.items)) {
+      const { name, url, numPages, items } = body as {
+        name: string;
+        url: string;
+        numPages: number;
+        items: Array<{ pageNumber: number; kind: 'text' | 'image'; embedding: number[]; imageIndex?: number }>;
+      };
+
+      const documentId = await upsertDocument(name, url);
+      await ensurePages(documentId, numPages);
+
+      for (const it of items) {
+        const pageId = await getPageId(documentId, it.pageNumber);
+        await insertPageEmbedding({
+          pageId,
+          kind: it.kind,
+          embedding: it.embedding,
+          imageIndex: it.imageIndex ?? null,
+        });
+      }
+
+      return new Response(JSON.stringify({ ok: true }), {
+        status: 200,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+
+    return new Response(JSON.stringify({ error: "Bad payload" }), { status: 400 });
   } catch (error) {
-    console.log(error);
-    response = new Response(null, { status: 500 });
+    console.error(error);
+    return new Response(JSON.stringify({ error: "Index failed" }), { status: 500 });
   } finally {
-    if (db) {
-      await db.close();
-    }
-    return response;
+    if (db) await db.close();
   }
 }

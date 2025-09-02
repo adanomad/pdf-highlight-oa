@@ -6,7 +6,7 @@ import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToImages, searchPdf, searchImages, extractImagesFromPdf, getPageTexts } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
 import HighlightUploader from "./HighlightUploader";
 import { StoredHighlight, StorageMethod } from "../utils/types";
@@ -17,6 +17,7 @@ import {
 import { createWorker } from "tesseract.js";
 // import { useSession } from "next-auth/react";
 import { getPdfId } from "../utils/pdfUtils";
+import DocuSidebar from "./DocuSideBar";
 import { storageMethod } from "../utils/env";
 
 export default function App() {
@@ -31,7 +32,35 @@ export default function App() {
   const [highlightsKey, setHighlightsKey] = useState(0);
   const [loading, setLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
+  const [documents, setDocuments] = useState<Array<{ id: string; name: string; url: string }>>([]);
+  const [searchMode, setSearchMode] = useState<"word" | "image">("word");
+
   // const session = useSession();
+
+  const loadDocuments = async () => {
+  const res = await fetch("/api/files/list", { cache: "no-store" });
+  const docs = await res.json();
+    setDocuments(docs);
+  };
+  useEffect(() => { loadDocuments(); }, []);
+
+  const onSelectDocument = (id: string) => {
+    const doc = documents.find((d) => d.id === id);
+    if (!doc) return;
+    setPdfUrl(doc.url);
+    setPdfName(doc.name);
+    setPdfId(id);
+  };
+
+  const onDeleteDocument = async (id: string) => {
+    if (!confirm("Delete this document?")) return;
+    const r = await fetch("/api/files/delete", {
+      method: "DELETE",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ fileName: id }),
+    });
+    if (r.ok) await loadDocuments();
+  };
 
   useEffect(() => {
     setHighlightsKey((prev) => prev + 1);
@@ -39,56 +68,72 @@ export default function App() {
 
   const handleFileUpload = async (file: File) => {
     setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
 
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
+    // 1) upload to Supabase via API
+    const fd = new FormData();
+    fd.append("file", file);
+    const up = await fetch("/api/files/upload", { method: "POST", body: fd });
+    const { fileUrl } = await up.json();
+
+    // 2) OCR first page (optional fallback)
+    const imgs = await convertPdfToImages(file);
+    const worker = await createWorker("eng");
+    const res = await worker.recognize(imgs[0], { pdfTitle: "ocr-out" }, { pdf: true });
+    const pdfData = res.data.pdf;
+    if (pdfData) {
+      const blob = new Blob([new Uint8Array(pdfData)], { type: "application/pdf" });
+      const ocrUrl = URL.createObjectURL(blob);
+      setPdfOcrUrl(ocrUrl);
     }
+
+    // 3) set viewer state
     setPdfUrl(fileUrl);
     setPdfUploaded(true);
     setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
+    setPdfId(file.name);
+
+    try {
+      // 4) Build per-page text + images on the client
+      const extracted = await extractImagesFromPdf(fileUrl);
+      const imagesByPage: Record<number, string[]> = {};
+      for (const im of extracted) {
+        (imagesByPage[im.pageNumber] ??= []).push(im.image);
+      }
+
+      const pageTexts = await getPageTexts(fileUrl);
+
+      // 5) Send to the server indexer
+      const ix = await fetch("/api/index/pages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: file.name,
+          url: fileUrl,
+          pages: pageTexts.map((p) => ({
+            pageNumber: p.pageNumber,
+            text: p.text,
+            images: imagesByPage[p.pageNumber] ?? [],
+          })),
+        }),
+      });
+
+      if (!ix.ok) {
+        const err = await ix.text().catch(() => "");
+        console.error("Indexing failed:", ix.status, err);
+      } else {
+        const j = await ix.json().catch(() => ({}));
+        console.log("Indexing ok:", j);
+      }
+    } catch (e) {
+      console.warn("Indexing step failed:", e);
+    } finally {
+      // 6) refresh doc list & stop spinner
+      setTimeout(loadDocuments, 500);
+      setLoading(false);
+    }
   };
+
+
 
   useEffect(() => {
     const getHighlights = async () => {
@@ -154,62 +199,97 @@ export default function App() {
     setHighlights([]);
   };
 
-  const handleSearch = async () => {
-    if (pdfUrl && searchTerm) {
-      const keywords = searchTerm.split("|");
-      let currentZoom = 1;
-
-      if (pdfViewerRef.current) {
-        if ("scale" in pdfViewerRef.current) {
-          currentZoom = pdfViewerRef.current.scale;
-        } else if (
-          pdfViewerRef.current.viewer &&
-          "scale" in pdfViewerRef.current.viewer
-        ) {
-          currentZoom = pdfViewerRef.current.viewer.scale;
-        } else {
-          console.warn(
-            "Unable to determine current zoom level. Using default zoom of 1."
-          );
-        }
-      }
-
-      console.log("Current zoom level:", currentZoom);
-
-      let newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
-      if (newHighlights.length === 0 && pdfOcrUrl) {
-        // Try searching the OCR pdf
-        // This step is sometimes required due to the OCR process
-        //   possibly being lossy (pdf -> png -> pdf)
-        //   which means some words are missing/malformed
-        newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
-      }
-
-      console.log("newHighlights:", JSON.stringify(newHighlights, null, 2));
-
-      const updatedHighlights = [...highlights, ...newHighlights];
-
-      if (pdfName && pdfId) {
-        const storedHighlights = updatedHighlights.map((highlight) =>
-          IHighlightToStoredHighlight(highlight, pdfId)
-        );
-        const body =
-          storageMethod === StorageMethod.sqlite
-            ? {
-                pdfId,
-                highlights: storedHighlights,
-              }
-            : storedHighlights;
-        await fetch("/api/highlight/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      }
-
-      setHighlights(updatedHighlights);
+  const onJumpToResult = (docId: string, url: string, pageNumber: number) => {
+    const switchDoc = docId !== pdfId;
+    if (switchDoc) {
+      // Load the new PDF first, then jump
+      setPdfUrl(url);
+      setPdfName(documents.find((d) => d.id === docId)?.name ?? null);
+      setPdfId(docId);
+      // Give the viewer a tick to mount, then jump
+      setTimeout(() => goToPage(pageNumber), 250);
+    } else {
+      goToPage(pageNumber);
     }
   };
+
+
+  const handleSearch = async () => {
+    if (!searchTerm.trim()) return;
+
+    // 1) Global search (all docs) — fills sidebar results
+    const kind = searchMode === "image" ? "image" : "text";
+    const r = await fetch(
+      `/api/search?q=${encodeURIComponent(searchTerm)}&kind=${kind}&limit=20`,
+      { cache: "no-store" }
+    );
+    const raw = r.ok ? await r.json() : [];
+
+    // Normalize every row shape we might get back and enrich from `documents`
+    const mapped = (Array.isArray(raw) ? raw : []).map((row: any) => {
+      const document_id =
+        row.document_id ?? row.doc_id ?? row.pdf_id ?? row.file_id ?? row.id ?? "";
+      const page_number =
+        typeof row.page_number === "number"
+          ? row.page_number
+          : typeof row.page === "number"
+          ? row.page
+          : 1;
+      const kind2 = (row.kind as "text" | "image") ?? (kind as "text" | "image");
+      const distance =
+        typeof row.distance === "number"
+          ? row.distance
+          : typeof row.score === "number"
+          ? row.score
+          : typeof row.similarity === "number"
+          ? row.similarity
+          : 0;
+
+      const doc = documents.find((d) => d.id === document_id);
+      return {
+        document_id,
+        document_name: doc?.name ?? document_id,
+        url: doc?.url ?? "",
+        page_number,
+        kind: kind2,
+        distance,
+      };
+    });
+
+    // 2) In-document highlights (only if a PDF is open)
+    if (!pdfUrl) return;
+
+    const currentZoom = pdfViewerRef.current?.viewer?.getCurrentScale?.() ?? 1;
+    const keywords = searchTerm.split(/\s+/).filter(Boolean);
+
+    let newHighlights: IHighlight[] = [];
+
+    if (searchMode === "word") {
+      newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
+      if (newHighlights.length === 0 && pdfOcrUrl) {
+        newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
+      }
+    } else {
+      newHighlights = await searchImages(keywords, pdfUrl, currentZoom);
+    }
+
+    setHighlights(newHighlights);
+    setHighlightsKey((k) => k + 1);
+  };
+
+
+  const goToPage = (pageNumber: number) => {
+    const viewer = pdfViewerRef.current?.viewer;
+    if (viewer?.scrollPageIntoView) {
+      try {
+        viewer.scrollPageIntoView({ pageNumber });
+        return;
+      } catch {}
+    }
+    // Fallback if the viewer doesn’t expose scrollPageIntoView:
+    window.location.hash = `#page=${pageNumber}`;
+  };
+
 
   const parseIdFromHash = () => {
     return document.location.hash.slice("#highlight-".length);
@@ -219,11 +299,7 @@ export default function App() {
     document.location.hash = "";
   };
 
-  const scrollViewerTo = useRef((highlight: IHighlight) => {
-    if (pdfViewerRef.current && highlight) {
-      pdfViewerRef.current.scrollTo(highlight);
-    }
-  });
+  const scrollViewerTo = useRef<(h: IHighlight) => void>(() => {});
 
   const scrollToHighlightFromHash = useCallback(() => {
     const highlightId = parseIdFromHash();
@@ -245,7 +321,7 @@ export default function App() {
   }, [scrollToHighlightFromHash]);
 
   return (
-    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
+    <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)] text-black">
       <div className="flex-1">
         <div className="mb-8 sticky top-0">
           <Header />
@@ -268,10 +344,12 @@ export default function App() {
             }
             {pdfUrl && (
               <KeywordSearch
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                handleSearch={handleSearch}
-                resetHighlights={resetHighlights}
+                term={searchTerm}
+                setTerm={setSearchTerm}
+                onSearch={handleSearch}
+                onClear={resetHighlights}
+                mode={searchMode}
+                setMode={setSearchMode}
               />
             )}
           </div>
@@ -281,6 +359,7 @@ export default function App() {
             </div>
           ) : (
             <PdfViewer
+              key={pdfUrl || 'no-pdf'}
               pdfUrl={pdfUrl}
               pdfName={pdfName}
               pdfId={pdfId}
@@ -294,6 +373,16 @@ export default function App() {
             />
           )}
         </div>
+      </div>
+      {/* Floating Sidebar for showing the documents */}
+      <div className="right-0 top-0 h-screen w-80 bg-white border-l border-gray-300 shadow-lg overflow-y-auto">
+        <DocuSidebar
+          documents={documents}
+          selectedId={pdfId}
+          onSelect={onSelectDocument}
+          onDelete={onDeleteDocument}
+          onJumpToResult={onJumpToResult}
+        />
       </div>
     </div>
   );
