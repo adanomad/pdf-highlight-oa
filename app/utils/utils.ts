@@ -2,32 +2,14 @@
 import { IHighlight } from "react-pdf-highlighter";
 import { StoredHighlight } from "./types";
 
-export const IHighlightToStoredHighlight = (
-  highlight: IHighlight,
-  pdfId: string,
-): StoredHighlight => {
-  return {
-    id: highlight.id,
-    pdfId,
-    pageNumber: highlight.position.pageNumber,
-    x1: highlight.position.boundingRect.x1,
-    y1: highlight.position.boundingRect.y1,
-    x2: highlight.position.boundingRect.x2,
-    y2: highlight.position.boundingRect.y2,
-    width: highlight.position.boundingRect.width,
-    height: highlight.position.boundingRect.height,
-    text: highlight.comment.text,
-    image: highlight.content.image,
-    keyword: highlight.content.text,
-  };
-};
+const getNextId = () => String(Math.random()).slice(2);
 
 export const StoredHighlightToIHighlight = (
   storedHighlight: StoredHighlight,
 ): IHighlight => {
   return {
     content: {
-      text: storedHighlight.keyword,
+      text: storedHighlight.text,
       image: storedHighlight.image,
     },
     position: {
@@ -55,8 +37,8 @@ export const StoredHighlightToIHighlight = (
     },
     comment: {
       text: storedHighlight.text,
-      emoji: "🔍",
+      emoji: "",
     },
-    id: storedHighlight.id,
+    id: getNextId(),
   };
 };

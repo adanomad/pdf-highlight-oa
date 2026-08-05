@@ -4,7 +4,8 @@ const nextConfig = {
   reactStrictMode: true,
 
   // Enables SWC for faster builds and hot reloading
-  swcMinify: true,
+  //Disabled for now (I think it's been removed)
+  //swcMinify: true,
 
   // Enable or customize webpack's configuration to improve development experience
   webpack: (config, { dev, isServer }) => {

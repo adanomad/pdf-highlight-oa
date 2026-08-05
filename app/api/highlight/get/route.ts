@@ -1,27 +1,20 @@
 // app/api/highlight/get/route.ts
-import HighlightStorage from "../../../utils/highlightStorage";
-import { storageMethod } from "../../../utils/env";
-import { StorageMethod } from "../../../utils/types";
-import { getHighlightsForPdf as supabaseGetHighlightsForPdf } from "../../../utils/supabase";
+import SQLiteDatabase from "../../../utils/sqliteUtils";
 
 async function handleRequest(req: Request): Promise<Response> {
-  let db: HighlightStorage | undefined;
+  let db: SQLiteDatabase | undefined;
   try {
     const body = await req.json();
     let highlights;
 
-    if (storageMethod === StorageMethod.sqlite) {
-      db = new HighlightStorage();
-      highlights = await db.getHighlightsForPdf(body.pdfId);
-    } else {
-      highlights = await supabaseGetHighlightsForPdf(body.pdfId);
-    }
+    db = new SQLiteDatabase();
+    highlights = await db.getHighlightsFromId(body.id as number);
 
     return new Response(JSON.stringify(highlights), {
       status: 200,
       headers: { "Content-Type": "application/json" },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error("Error in handleRequest:", error);
     return new Response(
       JSON.stringify({

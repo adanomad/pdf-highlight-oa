@@ -1,27 +1,10 @@
 // app/components/Sidebar.tsx
-import {
-  AreaHighlight,
-  Highlight,
-  PdfHighlighter,
-  PdfLoader,
-  Popup,
-  Tip,
-  IHighlight, // Importing IHighlight type
-} from "react-pdf-highlighter";
+import { useState } from "react";
 import { Button } from "./Button";
-import { X } from "lucide-react";
-import { storageMethod } from "../utils/env";
-import { StorageMethod } from "../utils/types";
-
-const updateHash = (highlight: IHighlight) => {
-  document.location.hash = `highlight-${highlight.id}`;
-};
-
-const removeHighlight = (highlights: IHighlight[], id: string) => {
-  return highlights.filter((h) => {
-    return h.id !== id;
-  });
-};
+import { SearchResult, ResultAndHighlight } from "../utils/types";
+import PdfSearch from "./PdfSearch";
+import Spinner from "./Spinner";
+import { clipText } from "../utils/clipText";
 
 const OpenIcon = () => {
   return (
@@ -64,34 +47,82 @@ const CloseIcon = () => {
 };
 
 interface SidebarProps {
-  highlights: Array<IHighlight>;
-  setHighlights: React.Dispatch<React.SetStateAction<Array<IHighlight>>>;
-  resetHighlights: () => void;
-  toggleDocument: () => void;
-  toggleSidebar: () => void;
   sidebarIsOpen: boolean;
+  toggleSidebar: () => void;
   pdfName: string;
-  pdfId: string;
-  scrollViewerTo: React.MutableRefObject<(highlight: IHighlight) => void>;
+  sidebarLoading: boolean;
+  setSidebarLoading: (sidebarLoading: boolean) => void;
+  handleButtonClick: (result: SearchResult) => Promise<void>;
+  loadingMessage: string;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-  highlights,
-  setHighlights,
-  resetHighlights,
-  toggleDocument,
   sidebarIsOpen,
   toggleSidebar,
   pdfName,
-  pdfId,
-  scrollViewerTo,
+  sidebarLoading,
+  setSidebarLoading,
+  handleButtonClick,
+  loadingMessage,
 }) => {
+  const [query, setQuery] = useState("");
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [searchResultsWithHighlights, setSearchResultsWithHighlights] = useState<ResultAndHighlight[]>([]);
+
+  const handleQuery = async () => {
+        if (query) {
+          setSidebarLoading(true);
+          const queryEmbedding = await clipText(query);
+          const embedding = JSON.stringify(Object.values(queryEmbedding));
+          const res = await fetch("/api/pdf/search", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              queryToEmbed: embedding
+            }),
+          });
+          if (res.ok) {
+            const results: SearchResult[] = await res.json();
+            if (results === null) {
+              setSearchResults([]);
+              throw("No PDFs uploaded yet!");
+              return;
+            }
+            setSearchResults(results);
+            let resultsWithHighlights: ResultAndHighlight[] = new Array(results.length);
+            for (let i = 0; i < results.length; ++i) {
+              const highlightRes = await fetch("/api/highlight/get", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                  id: results[i].id
+                }),
+              });
+              if (highlightRes.ok) {
+                const highlight = await highlightRes.json();
+                resultsWithHighlights[i] = {result: results[i], highlight: highlight[0]};
+              } else {
+                console.log("Failed to fetch highlights");
+                throw("Failed to fetch highlights: " + res.statusText);
+              }
+            }
+            setSearchResultsWithHighlights(resultsWithHighlights);
+          } else {
+            console.log("Failed to search PDFs: ", res.statusText);
+            throw("Failed to search PDFs: "+ res.statusText);
+          }
+          setSidebarLoading(false);
+        } else {
+          console.log("Invalid query!");
+        }
+      }
+
   return sidebarIsOpen ? (
     <div className="Sidebar h-full pl-2 pr-2 border-r-2 rounded-lg overflow-y-auto">
       <div className="sticky top-0 pt-2 bg-white border-b-2">
         <div className="w-full flow-root">
           <button
-            className="float-left flex justify-center items-center"
+            className="float-left flex justify-center items-center m-4"
             onClick={toggleSidebar}
           >
             <CloseIcon />
@@ -100,71 +131,47 @@ export const Sidebar: React.FC<SidebarProps> = ({
             <h1 className="text-lg font-bold">{pdfName}</h1>
           </div>
         </div>
-        {/* <button className="text-left" onClick={toggleDocument}>
-          Toggle Document
-        </button> */}
-      </div>
-      <ul>
-        {highlights.map((highlight) => (
-          <li key={highlight.id} className="border-t-2">
-            <div
-              onClick={() => {
-                updateHash(highlight);
-                scrollViewerTo.current(highlight);
-              }}
-              className="py-px cursor-pointer hover:bg-gray-100"
-            >
-              {highlight.content.text ? (
-                <blockquote className="text-sm font-bold line-clamp-3">
-                  {highlight.content.text}
-                </blockquote>
-              ) : null}
-              {highlight.content.image ? (
-                <div
-                  className="highlight__image"
-                  style={{ marginTop: "0.5rem" }}
+        <div className="flex flex-col">
+          {sidebarLoading ? (
+            <div className="w-full flex flex-col items-center justify-center">
+              <p className="mt-4">{loadingMessage}</p>
+              <Spinner />
+            </div>
+          ) : (
+            <div>
+              <div className="m-4">
+                <PdfSearch
+                  query={query}
+                  setQuery={setQuery}
+                  handleSearch={handleQuery}
                 >
-                  <img src={highlight.content.image} alt={"Screenshot"} />
-                </div>
-              ) : null}
-              <div className="pl-auto w-full flow-root align-middle">
-                <div className="flex float-left m-auto pt-1">
-                  <p className="text-left text-sm italic">
-                    Page {highlight.position.pageNumber}
-                  </p>
-                </div>
-                <div className="float-right">
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    onClick={() => {
-                      const body =
-                        storageMethod === StorageMethod.sqlite
-                          ? {
-                              pdfId,
-                              id: highlight.id,
-                            }
-                          : highlight.id;
-                      fetch("/api/highlight/update", {
-                        method: "DELETE",
-                        headers: { "Content-Type": "application/json" },
-                        body: JSON.stringify(body),
-                      });
-                      const newHighlights = removeHighlight(
-                        highlights,
-                        highlight.id
-                      );
-                      setHighlights([...newHighlights]);
-                    }}
-                  >
-                    <X className="w-3 h-3" />
-                  </Button>
-                </div>
+                </PdfSearch>
+              </div>
+              <div className="flex flex-col items-center gap-0">
+                {
+                  searchResultsWithHighlights.map((resultWithHighlight, i) => {
+                    return (
+                      <Button variant="outline" key={i} onClick={async () => await handleButtonClick(searchResults[i])} className="m-4 flex-col">
+                        <p className={`text-md text-black ${resultWithHighlight.highlight.image ? "" : "italic"}`}>
+                          {resultWithHighlight.highlight.image ? "IMAGE" : `${resultWithHighlight.highlight.text}`}
+                        </p>
+                        <br></br>
+                        <p className="text-xs">
+                          {resultWithHighlight.result.pdfPage.pdf ? resultWithHighlight.result.pdfPage.pdf.name + "  pg." + resultWithHighlight.result.pdfPage.pageNumber : ""}
+                        </p>
+                        <p className="text-xs">
+                          Vector Distance: {resultWithHighlight.result.distance}
+                        </p>
+                      </Button>
+                  )})
+                }
+                <div className="w-fit p-4">
+                </div>              
               </div>
             </div>
-          </li>
-        ))}
-      </ul>
+          )}
+        </div>
+      </div>
     </div>
   ) : (
     <div className="Sidebar pl-2 pr-2 shadow-md rounded-lg overflow-y-auto">

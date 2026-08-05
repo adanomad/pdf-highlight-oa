@@ -5,17 +5,19 @@ import { Input } from "./Input";
 import { Upload } from "lucide-react";
 
 interface PdfUploaderProps {
-  onFileUpload: (file: File) => void;
+  onFileUpload: (file: File) => Promise<void>;
+  name: string;
   pdfUploaded: boolean;
 }
 
 const PdfUploader: React.FC<PdfUploaderProps> = ({
   onFileUpload,
+  name,
   pdfUploaded,
 }) => {
-  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (event: React.ChangeEvent<HTMLInputElement>) => {
     if (event.target.files && event.target.files[0]) {
-      onFileUpload(event.target.files[0]);
+      await onFileUpload(event.target.files[0]);
     }
   };
 

@@ -1,214 +1,153 @@
 // app/components/App.tsx
 "use client";
 import React, { useCallback, useState, useEffect, useRef } from "react";
-import PdfUploader from "./PdfUploader";
-import KeywordSearch from "./KeywordSearch";
 import PdfViewer from "./PdfViewer";
 import { Header } from "./Header";
 import Spinner from "./Spinner";
-import { convertPdfToImages, searchPdf } from "../utils/pdfUtils";
+import { convertPdfToImages, getLines, getPdfId, getImagesIndividual } from "../utils/pdfUtils";
 import type { IHighlight } from "react-pdf-highlighter";
-import HighlightUploader from "./HighlightUploader";
-import { StoredHighlight, StorageMethod } from "../utils/types";
-import {
-  IHighlightToStoredHighlight,
-  StoredHighlightToIHighlight,
-} from "../utils/utils";
-import { createWorker } from "tesseract.js";
-// import { useSession } from "next-auth/react";
-import { getPdfId } from "../utils/pdfUtils";
-import { storageMethod } from "../utils/env";
+import PdfUploader from "./PdfUploader";
+import { StoredPdf, SearchResult, StoredImage } from "../utils/types";
+import { StoredHighlightToIHighlight } from "../utils/utils";
+import { clipText } from "../utils/clipText";
+import { clipImage } from "../utils/clipImage";
+import { tesseractRead } from "../utils/pdfUtils";
+import localforage from "localforage";
 
 export default function App() {
   const [pdfUploaded, setPdfUploaded] = useState(false);
-  const [searchTerm, setSearchTerm] = useState("");
   const [pdfUrl, setPdfUrl] = useState<string | null>(null);
-  const [pdfOcrUrl, setPdfOcrUrl] = useState<string | null>(null);
   const [pdfName, setPdfName] = useState<string | null>(null);
   const [pdfId, setPdfId] = useState<string | null>(null);
-  const [highlightUrl, setHighlightUrl] = useState<string | null>(null);
   const [highlights, setHighlights] = useState<Array<IHighlight>>([]);
-  const [highlightsKey, setHighlightsKey] = useState(0);
-  const [loading, setLoading] = useState(false);
+  const [highlightsKey, setHighlightsKey] = useState(1);
+  const [sidebarLoading, setSidebarLoading] = useState(false);
+  const [viewerLoading, setViewerLoading] = useState(false);
   const pdfViewerRef = useRef<any>(null);
-  // const session = useSession();
-
-  useEffect(() => {
-    setHighlightsKey((prev) => prev + 1);
-  }, [highlights]);
+  const [loadingMessage, setLoadingMessage] = useState("");
 
   const handleFileUpload = async (file: File) => {
-    setLoading(true);
-    let fileUrl = URL.createObjectURL(file);
-    const pdfId = getPdfId(
-      file.name,
-      /* session.data?.user?.email ?? */ undefined
-    );
-    // Creating a searchable PDF:
-    // Convert uploaded PDF file to b64 image,
-    //   perform OCR,
-    //   convert output back to PDF
-    //   update file url with new PDF url
-    const i = await convertPdfToImages(file);
-    const worker = await createWorker("eng");
-    const res = await worker.recognize(
-      i[0],
-      { pdfTitle: "ocr-out" },
-      { pdf: true }
-    );
-    const pdf = res.data.pdf;
-    if (pdf) {
-      // Update file url if OCR success
-      const blob = new Blob([new Uint8Array(pdf)], { type: "application/pdf" });
-      const fileOcrUrl = URL.createObjectURL(blob);
-      setPdfOcrUrl(fileOcrUrl);
 
-      // Index words
-      // const data = res.data.words;
-      // const words = data.map(({ text, bbox: { x0, y0, x1, y1 } }) => {
-      //   return {
-      //     keyword: text,
-      //     x1: x0,
-      //     y1: y0,
-      //     x2: x1,
-      //     y2: y1,
-      //   };
-      // });
-      // await fetch("/api/index", {
-      //   method: "POST",
-      //   headers: { "Content-Type": "application/json" },
-      //   body: JSON.stringify({
-      //     pdfId,
-      //     words,
-      //   }),
-      // });
-    }
-    setPdfUrl(fileUrl);
-    setPdfUploaded(true);
-    setPdfName(file.name);
-    setPdfId(pdfId);
-    setLoading(false);
-  };
+    setSidebarLoading(true);
+    setViewerLoading(true);
+    setLoadingMessage("Preparing PDF for embedding...");
+    let currentZoom = 1;
 
-  useEffect(() => {
-    const getHighlights = async () => {
-      if (!pdfName) {
-        return;
-      }
-      const res = await fetch("/api/highlight/get", {
+    try {
+      const fileUrl = URL.createObjectURL(file);
+      const pdfId = getPdfId(file.name);
+      const blob: Blob = await fetch(fileUrl).then(r => r.blob());
+
+      const extractedText = await getLines(pdfId, fileUrl, currentZoom);
+      const extractedImages = await getImagesIndividual(pdfId, fileUrl, currentZoom);
+      
+      const numPages = extractedText.length;
+      let textToEmbed: any[] = new Array(numPages);
+
+      const pdfObj = {
+        id: pdfId,
+        name: file.name,
+        numPages: numPages,
+        url: fileUrl,
+      } as StoredPdf;
+
+      localforage.setItem(pdfId, blob, function(err, result) {
+        console.log(result.type);
+      })
+
+      const res = await fetch("/api/index", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(pdfId),
-      });
-      if (res.ok) {
-        const resHighlights = await res.json();
-        console.log("getHighlights", pdfId, resHighlights);
-        if (resHighlights) {
-          const highlights = resHighlights.map(
-            (storedHighlight: StoredHighlight) => {
-              return StoredHighlightToIHighlight(storedHighlight);
+        body: JSON.stringify({
+          pdfObj
+        }),
+      })
+      if (!res.ok) {
+        console.error("Error uploading PDF metadata.");
+      }
+
+      setViewerLoading(false);
+      setPdfUrl(fileUrl);
+      setPdfUploaded(true);
+      setPdfName(file.name);
+      setPdfId(pdfId);
+      resetHighlights();
+
+      const i: StoredImage[] = await convertPdfToImages(file);  
+
+      //Perform OCR if no text is extracted
+      if (extractedText.length === 0 || extractedText[0].length === 0 || extractedText[0][0].text === "") {
+        setLoadingMessage("Performing OCR on PDF...");
+        textToEmbed = await tesseractRead(i, pdfId, fileUrl); 
+      } else { 
+        textToEmbed = extractedText;
+      }
+
+      for (let j = 0; j < numPages; ++j) {
+        setLoadingMessage(`Uploading embeddings for page ${j + 1} of ${numPages}`);
+        let toApiArr = [];
+        for (let k = 0; k < textToEmbed[j].length; ++k) {
+          try {
+            const embeddingObj = await clipText(textToEmbed[j][k].text);
+            const embedding = JSON.stringify(Object.values(embeddingObj));
+
+            toApiArr.push({
+              pdfId: pdfId,
+              embedding,
+              pageNumber: j + 1,
+              lineNumber: k + 1,
+              StoredHighlight: textToEmbed[j][k],
+            });
+
+          } catch(err) {
+            console.log(`Error uploading page ${j + 1} line ${k + 1}`);
+          }
+        }
+        for (let l = 0; l < extractedImages[j].length; ++l) {
+          try {
+            const image = extractedImages[j][l].image;
+            let embeddingObj;
+            if (image/* && (textToEmbed[j].length == 0 
+                        || textToEmbed[j][0].text === "" 
+                        || Math.abs(extractedImages[j][l].height - i[j].height) > 10 
+                        || Math.abs(extractedImages[j][l].width - i[j].width) > 10)*/) { //want to exclude text images already scanned with OCR
+              embeddingObj = await clipImage(image);
+              const embedding = JSON.stringify(Object.values(embeddingObj));
+
+              toApiArr.push({
+                pdfId: pdfId,
+                embedding,
+                pageNumber: j + 1,
+                lineNumber: -1 * (l + 1),
+                StoredHighlight: extractedImages[j][l],
+              });
             }
-          );
-          setHighlights(highlights);
+          } catch(err) {
+            console.log(`Error uploading page ${j + 1} line ${l + 1}`);
+          }
+        }
+        if (toApiArr.length > 0) {
+          const embeddingRes = await fetch("/api/index/embedding", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(toApiArr)
+          })
+          if (!embeddingRes.ok) {
+            console.error("Error loading PDF embeddings.");
+          }
         }
       }
-    };
-    getHighlights();
-  }, [pdfName, pdfId]);
-
-  const handleHighlightUpload = (file: File) => {
-    const fileUrl = URL.createObjectURL(file);
-    setHighlightUrl(fileUrl);
+    } catch (err) {
+      console.error("Error processing PDF:", err);
+      setViewerLoading(false);
+    } finally {
+      setLoadingMessage("Loading...");
+      setSidebarLoading(false);
+    }
   };
-
-  useEffect(() => {
-    const setHighlightsFromFile = async () => {
-      if (!highlightUrl || !pdfUploaded) {
-        return;
-      }
-      const res = await fetch(highlightUrl);
-      if (res.ok) {
-        const data = await res.json();
-        const highlights = data.map((highlight: StoredHighlight) =>
-          StoredHighlightToIHighlight(highlight)
-        );
-        setHighlights(highlights);
-        const body =
-          storageMethod === StorageMethod.sqlite
-            ? {
-                pdfId,
-                highlights: data,
-              }
-            : data;
-        await fetch("/api/highlight/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      }
-    };
-    setHighlightsFromFile();
-  }, [highlightUrl, pdfUploaded, pdfId]);
 
   const resetHighlights = () => {
-    setHighlights([]);
-  };
-
-  const handleSearch = async () => {
-    if (pdfUrl && searchTerm) {
-      const keywords = searchTerm.split("|");
-      let currentZoom = 1;
-
-      if (pdfViewerRef.current) {
-        if ("scale" in pdfViewerRef.current) {
-          currentZoom = pdfViewerRef.current.scale;
-        } else if (
-          pdfViewerRef.current.viewer &&
-          "scale" in pdfViewerRef.current.viewer
-        ) {
-          currentZoom = pdfViewerRef.current.viewer.scale;
-        } else {
-          console.warn(
-            "Unable to determine current zoom level. Using default zoom of 1."
-          );
-        }
-      }
-
-      console.log("Current zoom level:", currentZoom);
-
-      let newHighlights = await searchPdf(keywords, pdfUrl, currentZoom);
-      if (newHighlights.length === 0 && pdfOcrUrl) {
-        // Try searching the OCR pdf
-        // This step is sometimes required due to the OCR process
-        //   possibly being lossy (pdf -> png -> pdf)
-        //   which means some words are missing/malformed
-        newHighlights = await searchPdf(keywords, pdfOcrUrl, currentZoom);
-      }
-
-      console.log("newHighlights:", JSON.stringify(newHighlights, null, 2));
-
-      const updatedHighlights = [...highlights, ...newHighlights];
-
-      if (pdfName && pdfId) {
-        const storedHighlights = updatedHighlights.map((highlight) =>
-          IHighlightToStoredHighlight(highlight, pdfId)
-        );
-        const body =
-          storageMethod === StorageMethod.sqlite
-            ? {
-                pdfId,
-                highlights: storedHighlights,
-              }
-            : storedHighlights;
-        await fetch("/api/highlight/update", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
-        });
-      }
-
-      setHighlights(updatedHighlights);
-    }
+    setHighlights((prevHighlights) => []);
   };
 
   const parseIdFromHash = () => {
@@ -225,24 +164,85 @@ export default function App() {
     }
   });
 
-  const scrollToHighlightFromHash = useCallback(() => {
-    const highlightId = parseIdFromHash();
-    const highlight = highlights.find((h) => h.id === highlightId);
-    if (highlight) {
-      scrollViewerTo.current(highlight);
-    }
+  useEffect(() => {
+    setHighlightsKey((prev) => prev + 1);
   }, [highlights]);
 
   useEffect(() => {
-    window.addEventListener("hashchange", scrollToHighlightFromHash, false);
-    return () => {
-      window.removeEventListener(
-        "hashchange",
-        scrollToHighlightFromHash,
-        false
-      );
-    };
-  }, [scrollToHighlightFromHash]);
+    const func = async () => {
+      const highlightId = parseIdFromHash();
+
+      if (highlights.length > 0) {
+        await new Promise(resolve => setTimeout(resolve, 2400));
+
+        const highlight = highlights.find((h) => h.id === highlightId);
+        if (highlight) {
+          scrollViewerTo.current(highlight);  
+          setSidebarLoading(false);
+        }
+      }
+    } 
+    func();
+  }, [highlights, pdfUrl])
+
+  const scrollToHighlightFromHash = useCallback(() => {
+    const highlightId = parseIdFromHash();
+    if (highlights.length > 0) {
+      const highlight = highlights.find((h) => h.id === highlightId);
+      if (highlight) {
+        scrollViewerTo.current(highlight);
+      }
+    }
+  }, []);
+
+  const updateHash = (highlight: IHighlight) => {
+    document.location.hash = `highlight-${highlight.id}`;
+  };
+
+  const handleButtonClick = async (result: SearchResult) => {
+    setSidebarLoading(true);
+    const pdfIdNew = result.pdfPage.pdf ? result.pdfPage.pdf.id : "";
+    if (pdfIdNew !== pdfId && pdfIdNew != "") {
+      setPdfId(pdfIdNew);
+      resetHighlights();
+      try {
+        await localforage.getItem(pdfIdNew)
+        .then(async function (value: any) {
+          const blob: Blob = value;
+          const fileUrl = URL.createObjectURL(blob);
+          setPdfUrl(fileUrl);
+          setPdfName(result.pdfPage.pdf ? result.pdfPage.pdf.name : "");
+          
+        }, 
+        function(error) {
+          console.log("Error retrieving highlight data from localforage" + error);
+          setViewerLoading(false);
+        })
+      } catch(err) {
+        console.log("Error retrieving highlight data from localforage: " + err);
+        setViewerLoading(false);
+      }
+    }
+    
+    if (pdfIdNew != "") {
+      const highlightRes = await fetch(
+        "/api/highlight/get", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: result.id
+          }),
+        });
+      if (highlightRes.ok) {
+        const highlightArr = await highlightRes.json();
+        const iHighlight = StoredHighlightToIHighlight(highlightArr[0]);
+        setHighlights(prev => [...prev, iHighlight]);
+        updateHash(iHighlight);
+      } else {
+        console.log("Error getting highlights");
+      }
+    }    
+  }
 
   return (
     <div className="flex min-h-screen bg-[linear-gradient(120deg,_rgb(249_250_251)_50%,_rgb(239_246_255)_50%)]">
@@ -255,27 +255,11 @@ export default function App() {
           <div className="max-w-xl mx-auto space-y-6">
             <PdfUploader
               onFileUpload={handleFileUpload}
+              name={pdfName || ""}
               pdfUploaded={pdfUploaded}
             />
-            {
-              /* session.status === "authenticated" &&  */ pdfId && (
-                <HighlightUploader
-                  onFileUpload={handleHighlightUpload}
-                  highlights={highlights}
-                  pdfId={pdfId}
-                />
-              )
-            }
-            {pdfUrl && (
-              <KeywordSearch
-                searchTerm={searchTerm}
-                setSearchTerm={setSearchTerm}
-                handleSearch={handleSearch}
-                resetHighlights={resetHighlights}
-              />
-            )}
           </div>
-          {loading ? (
+          {viewerLoading ? (
             <div className="w-full flex items-center justify-center">
               <Spinner />
             </div>
@@ -284,6 +268,7 @@ export default function App() {
               pdfUrl={pdfUrl}
               pdfName={pdfName}
               pdfId={pdfId}
+              setPdfUrl={setPdfUrl}
               highlights={highlights}
               setHighlights={setHighlights}
               highlightsKey={highlightsKey}
@@ -291,6 +276,10 @@ export default function App() {
               resetHash={resetHash}
               scrollViewerTo={scrollViewerTo}
               scrollToHighlightFromHash={scrollToHighlightFromHash}
+              sideBarLoading={sidebarLoading}
+              setSideBarLoading={setSidebarLoading}
+              handleButtonClick={handleButtonClick}
+              loadingMessage={loadingMessage}
             />
           )}
         </div>

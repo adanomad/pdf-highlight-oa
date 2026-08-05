@@ -8,7 +8,7 @@ import {
   Popup,
   Tip,
 } from "react-pdf-highlighter";
-// import { useSession } from "next-auth/react";
+import { SearchResult } from "../utils/types";
 import Spinner from "./Spinner";
 import { Sidebar } from "./Sidebar";
 import HighlightPopup from "./HighlightPopup";
@@ -17,12 +17,13 @@ import type {
   IHighlight,
   ScaledPosition,
 } from "react-pdf-highlighter";
-import { IHighlightToStoredHighlight } from "../utils/utils";
+import "../globals.css";
 
 interface PdfViewerProps {
   pdfUrl: string | null;
   pdfName: string | null;
   pdfId: string | null;
+  setPdfUrl: (url: string) => void;
   highlights: Array<IHighlight>;
   setHighlights: React.Dispatch<React.SetStateAction<Array<IHighlight>>>;
   highlightsKey: number;
@@ -30,12 +31,17 @@ interface PdfViewerProps {
   resetHash: () => void;
   scrollViewerTo: React.MutableRefObject<(highlight: IHighlight) => void>;
   scrollToHighlightFromHash: () => void;
+  sideBarLoading: boolean;
+  setSideBarLoading: (sidebarLoading: boolean) => void;
+  handleButtonClick: (result: SearchResult) => Promise<void>;
+  loadingMessage: string; 
 }
 
 const PdfViewer: React.FC<PdfViewerProps> = ({
   pdfUrl,
   pdfName,
   pdfId,
+  setPdfUrl,
   highlights,
   setHighlights,
   highlightsKey,
@@ -43,9 +49,12 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
   resetHash,
   scrollViewerTo,
   scrollToHighlightFromHash,
+  sideBarLoading,
+  setSideBarLoading,
+  handleButtonClick,
+  loadingMessage,
 }) => {
   const [sidebarIsOpen, setSidebarIsOpen] = useState(true);
-  // const session = useSession();
 
   const updateHighlight = (
     highlightId: string,
@@ -76,43 +85,43 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
     return (
       <>
         <div className="text-center font-bold text-md">
-          Upload your PDF to start highlighting!
+          Upload your PDFs to get started!
         </div>
-        {/* {session.status !== "authenticated" && (
-          <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
-            <img
-              src="demo.png"
-              className="rounded-lg object-cover w-full hover:scale-[1.05] transform transition duration-500"
-            />
-          </div>
-        )} */}
+        <Sidebar
+          toggleSidebar={() => {
+            setSidebarIsOpen(!sidebarIsOpen);
+          }}
+          sidebarIsOpen={sidebarIsOpen}
+          pdfName={""}
+          sidebarLoading={sideBarLoading}
+          setSidebarLoading={setSideBarLoading}
+          handleButtonClick={handleButtonClick}
+          loadingMessage={loadingMessage}
+        />
       </>
     );
   }
   return (
     <div className="bg-white shadow-lg rounded-lg h-[calc(100vh-16rem)] flex flex-row gap-2 justify-center">
       <div
-        className={`${sidebarIsOpen ? "basis-[20%]" : "basis-[0%]"} hidden md:block`}
+        className={`${sidebarIsOpen ? "basis-[20%]" : "basis-[0%]"} md:block`}
       >
         {pdfName && pdfId && (
           <Sidebar
-            highlights={highlights}
-            setHighlights={setHighlights}
-            resetHighlights={() => {
-              setHighlights([]);
-            }}
-            toggleDocument={() => {}}
             toggleSidebar={() => {
               setSidebarIsOpen(!sidebarIsOpen);
             }}
             sidebarIsOpen={sidebarIsOpen}
             pdfName={pdfName}
-            pdfId={pdfId}
-            scrollViewerTo={scrollViewerTo}
+            sidebarLoading={sideBarLoading}
+            setSidebarLoading={setSideBarLoading}
+            handleButtonClick={handleButtonClick}
+            loadingMessage={loadingMessage}
           />
         )}
       </div>
-      <div className="w-full h-full relative p-4 overflow-y-auto">
+      {pdfUrl ?
+      (<div className="w-full h-full relative p-4 overflow-y-auto">
         <PdfLoader
           url={pdfUrl}
           beforeLoad={<Spinner />}
@@ -130,30 +139,11 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                 hideTipAndSelection,
                 transformSelection
               ) => {
+                console.log("Selection finished:", position, content);
                 return (
                   <Tip
                     onOpen={transformSelection}
-                    onConfirm={(comment) => {
-                      const newHighlight = {
-                        content,
-                        position,
-                        comment,
-                        id: Date.now().toString(),
-                      };
-                      if (pdfName) {
-                        const sh = IHighlightToStoredHighlight(
-                          newHighlight,
-                          pdfName
-                        );
-                        fetch("/api/highlight/update", {
-                          method: "POST",
-                          headers: { "Content-Type": "application/json" },
-                          body: JSON.stringify(sh),
-                        });
-                      }
-                      setHighlights((prev) => [...prev, newHighlight]);
-                      hideTipAndSelection();
-                    }}
+                    onConfirm={(comment) => {}}
                   />
                 );
               }}
@@ -174,17 +164,22 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
                     comment={highlight.comment}
                   />
                 ) : (
-                  <AreaHighlight
-                    isScrolledTo={isScrolledTo}
-                    highlight={highlight}
-                    onChange={(boundingRect) => {
-                      updateHighlight(
-                        highlight.id,
-                        { boundingRect: viewportToScaled(boundingRect) },
-                        { image: screenshot(boundingRect) }
-                      );
-                    }}
-                  />
+                  <div
+                    className="Highlight"
+                    style={{ backgroundColor:'#2200ffff' }}
+                  >
+                    <AreaHighlight
+                      isScrolledTo={isScrolledTo}
+                      highlight={highlight}
+                      onChange={(boundingRect) => {
+                        updateHighlight(
+                          highlight.id,
+                          { boundingRect: viewportToScaled(boundingRect) },
+                          { image: screenshot(boundingRect) }
+                        );
+                      }}
+                    />
+                  </div>
                 );
                 return (
                   <Popup
@@ -210,7 +205,10 @@ const PdfViewer: React.FC<PdfViewerProps> = ({
             />
           )}
         </PdfLoader>
-      </div>
+      </div>) :
+      <></>
+      }
+      
     </div>
   );
 };
